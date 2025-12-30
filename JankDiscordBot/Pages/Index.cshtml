@@ -1,0 +1,37 @@
+﻿@page
+@model IndexModel
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h2 class="m-0">Status</h2>
+        <div class="text-white-50">Bot runtime + connectivity</div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-xl-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <h5 class="card-title m-0">Bot Status</h5>
+                    <span class="badge bg-primary fs-6">@Model.State</span>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(Model.Details))
+                {
+                    <div class="text-white-50 mt-2">@Model.Details</div>
+                }
+
+                <div class="text-white-50 small mt-3">
+                    Last change (UTC): @Model.LastChangeUtc
+                </div>
+
+                <hr class="border-secondary" />
+
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-outline-secondary" href="/health" target="_blank">Health</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

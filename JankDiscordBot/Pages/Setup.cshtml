@@ -1,0 +1,65 @@
+﻿@page
+@model SetupModel
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h2 class="m-0">Setup</h2>
+        <div class="text-white-50">Discord connection settings</div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            @if (Model.HasToken)
+            {
+                <span class="badge bg-success">Token stored</span>
+                <span class="text-white-50 small">Stored encrypted in SQLite. Leave the box blank to keep it.</span>
+            }
+            else
+            {
+                <span class="badge bg-warning text-dark">Token not set</span>
+                <span class="text-white-50 small">Paste a bot token below and click Save.</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Message))
+        {
+            <div class="alert alert-@Model.MessageKind mb-3">@Model.Message</div>
+        }
+
+        <form method="post" class="row g-3">
+            <div class="col-12">
+                <label class="form-label">Guild ID</label>
+                <input class="form-control" name="GuildId" value="@Model.GuildId" placeholder="123456789012345678" />
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Bot Token</label>
+                <input class="form-control"
+                       name="Token"
+                       type="password"
+                       value=""
+                       placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
+            </div>
+
+            <div class="col-12 form-check">
+                <input class="form-check-input" type="checkbox" name="RegisterToGuild" value="true" @(Model.RegisterToGuild ? "checked" : "") />
+                <label class="form-check-label">Register commands to this guild (fast updates)</label>
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">Save</button>
+
+                <button class="btn btn-outline-info"
+                        type="submit"
+                        asp-page-handler="Test">
+                    Test
+                </button>
+
+                <a class="btn btn-outline-secondary" href="/Rosters">Rosters</a>
+            </div>
+        </form>
+    </div>
+</div>

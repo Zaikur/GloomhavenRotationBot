@@ -15,7 +15,7 @@ public class RostersModel : PageModel
     }
 
     public RotationState Dm { get; private set; } = new();
-    public RotationState Cook { get; private set; } = new();
+    public RotationState Food { get; private set; } = new();
 
     public List<(ulong Id, string Name)> GuildMembers { get; private set; } = new();
     public string? Warning { get; private set; }
@@ -26,7 +26,7 @@ public class RostersModel : PageModel
     public async Task OnGetAsync()
     {
         Dm = await _repo.GetRotationAsync(RotationRole.DM);
-        Cook = await _repo.GetRotationAsync(RotationRole.Food);
+        Food = await _repo.GetRotationAsync(RotationRole.Food);
 
         GuildMembers = await _members.GetMembersAsync();
         _nameById = GuildMembers.ToDictionary(x => x.Id, x => x.Name);

@@ -35,7 +35,8 @@ public class SetupModel : PageModel
         HasToken = !string.IsNullOrWhiteSpace(token);
         GuildId = gid == 0 ? "" : gid.ToString();
         RegisterToGuild = reg;
-        var (_, h, m) = await _settings.GetAnnouncementConfigAsync();
+        var (ch, h, m) = await _settings.GetAnnouncementConfigAsync();
+        AnnounceChannelId = ch == 0 ? "" : ch.ToString();
         AnnounceTime = $"{h:D2}:{m:D2}";
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
@@ -51,14 +52,52 @@ public class SetupModel : PageModel
             return Page();
         }
 
+        ulong chId = 0;
+        if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
+            (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
+        {
+            Message = "Announcement Channel ID must be a valid non-zero number (or leave it blank to disable announcements).";
+            MessageKind = "warning";
+            await ReloadTokenFlagAsync();
+            return Page();
+        }
+
+        if (!TimeOnly.TryParse(AnnounceTime, out var t))
+        {
+            Message = "Announcement time must be a valid time (HH:mm).";
+            MessageKind = "warning";
+            await ReloadTokenFlagAsync();
+            return Page();
+        }
+
         await _settings.SaveDiscordConfigAsync(Token, gid, RegisterToGuild);
+        await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
+        await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
 
         Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";
 
-        ulong.TryParse(AnnounceChannelId, out var chId);
-        var timeOk = TimeOnly.TryParse(AnnounceTime, out var t);
-        if (!timeOk)
+        Token = null; // never echo back
+        await ReloadTokenFlagAsync();
+
+        await OnGetAsync();
+
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostTestAnnouncementAsync()
+    {
+        ulong chId = 0;
+        if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
+            (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
+        {
+            Message = "Announcement Channel ID must be a valid non-zero number (or leave blank to disable).";
+            MessageKind = "warning";
+            await ReloadTokenFlagAsync();
+            return Page();
+        }
+
+        if (!TimeOnly.TryParse(AnnounceTime, out var t))
         {
             Message = "Announcement time must be a valid time (HH:mm).";
             MessageKind = "warning";
@@ -69,13 +108,7 @@ public class SetupModel : PageModel
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
 
-        Token = null; // never echo back
-        await ReloadTokenFlagAsync();
-        return Page();
-    }
-
-    public async Task<IActionResult> OnPostTestAnnouncementAsync()
-    {
+        // Now send preview/test
         var tzRule = await _settings.GetScheduleRuleAsync();
         var tz = TimeZoneInfo.FindSystemTimeZoneById(tzRule.TimeZoneId);
         var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
@@ -86,7 +119,7 @@ public class SetupModel : PageModel
         Message = msg;
         MessageKind = ok ? "success" : "warning";
 
-        await OnGetAsync(); // reload fields so the page shows current settings
+        await OnGetAsync();
         return Page();
     }
 

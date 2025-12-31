@@ -71,33 +71,40 @@
     <div class="col-12 col-lg-6">
         <div class="card shadow-sm">
             <div class="card-body">
-                <h5 class="card-title">Cook Roster</h5>
+                <h5 class="card-title">Food Roster</h5>
 
                 <ul class="list-group mb-3">
-                    @for (int i = 0; i < Model.Cook.Members.Count; i++)
+                    @for (int i = 0; i < Model.Food.Members.Count; i++)
                     {
-                        var id = Model.Cook.Members[i];
+                        var id = Model.Food.Members[i];
                         var name = Model.NameFor(id);
                         <li class="list-group-item d-flex align-items-center justify-content-between">
                             <div>
-                                <span class="me-2">@((i == Model.Cook.Index) ? "➡️" : "")</span>
+                                <span class="me-2">@((i == Model.Food.Index) ? "➡️" : "")</span>
                                 <strong>@(i + 1).</strong> @name <span class="text-muted small">(<code>@id</code>)</span>
                             </div>
-                            <div class="btn-gap">
+                            <div class="d-flex flex-wrap">
                                 <form method="post" asp-page-handler="Up">
-                                    ...
+                                    <input type="hidden" name="Role" value="food" />
+                                    <input type="hidden" name="Index" value="@i" />
                                     <button class="btn btn-sm btn-outline-secondary" type="submit">↑</button>
                                 </form>
+
                                 <form method="post" asp-page-handler="Down">
-                                    ...
+                                    <input type="hidden" name="Role" value="food" />
+                                    <input type="hidden" name="Index" value="@i" />
                                     <button class="btn btn-sm btn-outline-secondary" type="submit">↓</button>
                                 </form>
+
                                 <form method="post" asp-page-handler="SetCurrent">
-                                    ...
+                                    <input type="hidden" name="Role" value="food" />
+                                    <input type="hidden" name="Index" value="@i" />
                                     <button class="btn btn-sm btn-outline-primary" type="submit">Set Current</button>
                                 </form>
+
                                 <form method="post" asp-page-handler="Remove">
-                                    ...
+                                    <input type="hidden" name="Role" value="food" />
+                                    <input type="hidden" name="Index" value="@i" />
                                     <button class="btn btn-sm btn-outline-danger" type="submit">Remove</button>
                                 </form>
                             </div>
@@ -106,7 +113,7 @@
                 </ul>
 
                 <form method="post" asp-page-handler="Add" class="row g-2">
-                    <input type="hidden" name="Role" value="cook" />
+                    <input type="hidden" name="Role" value="food" />
                     <div class="col-8">
                         <select class="form-select" name="UserId">
                             <option value="">-- select member --</option>

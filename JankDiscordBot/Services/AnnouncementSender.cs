@@ -30,36 +30,11 @@ public sealed class AnnouncementSender
     public async Task<(bool Ok, string Message)> BuildMorningTextAsync(DateOnly localDate, CancellationToken ct = default)
     {
         var sessions = await _schedule.GetSessionsOccurringOnDateAsync(localDate);
-        if (sessions.Count == 0)
-            return (true, "No session occurs on that date (nothing to announce).");
 
-        // For preview, just show the first session that occurs that day
         var s = sessions[0];
+        var msg = await BuildMessageForSessionAsync(s, ct);
 
-        if (s.IsCancelled)
-        {
-            var noteLine = string.IsNullOrWhiteSpace(s.Note) ? "" : $"\n📝 **Reason:** {s.Note.Trim()}";
-            return (true,
-                $"🛑 **Gloomhaven** is **cancelled** for today.\n" +
-                $"(Scheduled time was {s.EffectiveStartLocal: h:mm tt})" +
-                noteLine);
-        }
-
-        var dm = await _repo.GetRotationAsync(RotationRole.DM);
-        var cook = await _repo.GetRotationAsync(RotationRole.Food);
-
-        string dmText = dm.Members.Count > 0 ? $"<@{dm.Members[dm.Index % dm.Members.Count]}>" : "_(not set)_";
-        string cookText = cook.Members.Count > 0 ? $"<@{cook.Members[cook.Index % cook.Members.Count]}>" : "_(not set)_";
-
-        var noteLine2 = string.IsNullOrWhiteSpace(s.Note) ? "" : $"\n📝 {s.Note.Trim()}";
-
-        var message =
-            $"☀️ **Gloomhaven tonight!**\n" +
-            $"🕡 **When:** {s.EffectiveStartLocal:dddd, MMM d} at {s.EffectiveStartLocal: h:mm tt}\n" +
-            $"🧙 **DM:** {dmText}\n" +
-            $"🍕 **Food:** {cookText}{noteLine2}";
-
-        return (true, message);
+        return (true, msg);
     }
 
     public async Task<(bool Ok, string Message)> SendMorningAsync(DateOnly localDate, bool dryRun, CancellationToken ct = default)
@@ -80,8 +55,10 @@ public sealed class AnnouncementSender
             return (true, "No session occurs on that date (nothing to announce).");
 
         int sent = 0;
+
         foreach (var s in sessions)
         {
+            // In normal mode, only announce once per occurrence
             if (!dryRun)
             {
                 var markers = await _repo.GetMarkersAsync(s.OccurrenceId);
@@ -89,37 +66,7 @@ public sealed class AnnouncementSender
                     continue;
             }
 
-            if (s.IsCancelled)
-            {
-                var noteLn = string.IsNullOrWhiteSpace(s.Note)
-                    ? ""
-                    : $"\n📝 **Reason:** {s.Note.Trim()}";
-
-                await channel.SendMessageAsync(
-                    $"🛑 **Gloomhaven** is **cancelled** for today.\n" +
-                    $"(Scheduled time was {s.EffectiveStartLocal: h:mm tt})" +
-                    noteLn,
-                    options: new RequestOptions { CancelToken = ct });
-
-                sent++;
-                if (!dryRun)
-                    await _repo.SetAnnouncedAsync(s.OccurrenceId, DateTime.UtcNow);
-
-                continue;
-            }
-
-            var dm = await _repo.GetRotationAsync(RotationRole.DM);
-            var cook = await _repo.GetRotationAsync(RotationRole.Food);
-
-            string dmText = dm.Members.Count > 0 ? $"<@{dm.Members[dm.Index % dm.Members.Count]}>" : "_(not set)_";
-            string cookText = cook.Members.Count > 0 ? $"<@{cook.Members[cook.Index % cook.Members.Count]}>" : "_(not set)_";
-            var noteLine = string.IsNullOrWhiteSpace(s.Note) ? "" : $"\n📝 {s.Note}";
-
-            var message =
-                $"☀️ **Gloomhaven tonight!**\n" +
-                $"🕡 **When:** {s.EffectiveStartLocal:dddd, MMM d} at {s.EffectiveStartLocal: h:mm tt}\n" +
-                $"🧙 **DM:** {dmText}\n" +
-                $"🍕 **Food:** {cookText}{noteLine}";
+            var message = await BuildMessageForSessionAsync(s, ct);
 
             await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
 
@@ -131,5 +78,48 @@ public sealed class AnnouncementSender
         return (true, dryRun
             ? $"Test sent {sent} message(s)."
             : $"Sent {sent} morning announcement(s).");
+    }
+
+    private async Task<string> BuildMessageForSessionAsync(SessionInfo s, CancellationToken ct)
+    {
+        // CANCELLED
+        if (s.IsCancelled)
+        {
+            var noteLine = string.IsNullOrWhiteSpace(s.Note)
+                ? ""
+                : $"\n**Reason:** {s.Note.Trim()}";
+
+            // Extra blank line before reason for readability
+            return
+                $"🛑 **Gloomhaven is cancelled today**\n" +
+                $"⏰ *Was scheduled for* **{s.EffectiveStartLocal:h:mm tt}**\n" +
+                $"{noteLine}";
+        }
+
+        // ACTIVE
+        var dm = await _repo.GetRotationAsync(RotationRole.DM);
+        var cook = await _repo.GetRotationAsync(RotationRole.Food);
+
+        string dmText = dm.Members.Count > 0
+            ? $"<@{dm.Members[dm.Index % dm.Members.Count]}>"
+            : "_(not set)_";
+
+        string cookText = cook.Members.Count > 0
+            ? $"<@{cook.Members[cook.Index % cook.Members.Count]}>"
+            : "_(not set)_";
+
+        var noteBlock = string.IsNullOrWhiteSpace(s.Note)
+            ? ""
+            : $"\n\n📝 **Note:** {s.Note.Trim()}";
+
+        // Add blank line between header + assignments for readability
+        return
+            $"☀️ **Gloomhaven tonight!**\n" +
+            $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n" +
+            $"\n" +
+            $"**Assignments**\n" +
+            $"• 🧙 **DM:** {dmText}\n" +
+            $"• 🍕 **Food:** {cookText}" +
+            $"{noteBlock}";
     }
 }

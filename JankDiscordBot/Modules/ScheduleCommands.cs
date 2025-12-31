@@ -5,7 +5,6 @@ using GloomhavenRotationBot.Services;
 
 namespace GloomhavenRotationBot.Discord.Modules;
 
-[Group("gloom", "Gloomhaven helpers")]
 public sealed class ScheduleCommands : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly ScheduleService _schedule;

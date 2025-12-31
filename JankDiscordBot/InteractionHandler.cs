@@ -49,9 +49,9 @@ public sealed class InteractionHandler
         {
             var (_, guildId, registerToGuild) = await _settings.GetDiscordConfigAsync();
 
-            // Force global registration until permissions are fixed
+            // TODO: Once bot has applications.commands scope, enable guild registration
             await _interactions.RegisterCommandsGloballyAsync(deleteMissing: true);
-            _logger.LogInformation("Registered commands globally (guild registration temporarily disabled).");
+            _logger.LogInformation("Registered commands globally.");
         }
         catch (Exception ex)
         {

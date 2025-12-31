@@ -3,7 +3,6 @@ using GloomhavenRotationBot.Data;
 
 namespace GloomhavenRotationBot.Discord.Modules;
 
-[Group("gloom", "Gloomhaven helpers")]
 public sealed class RotationCommands : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly BotRepository _repo;

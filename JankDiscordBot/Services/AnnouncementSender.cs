@@ -54,6 +54,21 @@ public sealed class AnnouncementSender
         if (sessions.Count == 0 && !dryRun)
             return (true, "No session occurs on that date (nothing to announce).");
 
+
+        // if it's a dry run, build a session so we can send something
+        if (dryRun && sessions.Count == 0)
+        {
+            var testSession = new SessionInfo(
+                OccurrenceId: "test:0000-00-00",
+                OriginalDateLocal: localDate,
+                EffectiveStartLocal: localDate.ToDateTime(new TimeOnly(19, 0)),
+                IsCancelled: false,
+                Note: "This is a test announcement."
+            );
+
+            sessions.Add(testSession);
+        }
+
         int sent = 0;
 
         foreach (var s in sessions)
@@ -66,7 +81,7 @@ public sealed class AnnouncementSender
                     continue;
             }
 
-            var message = await BuildMessageForSessionAsync(s, ct);
+                var message = await BuildMessageForSessionAsync(s, ct);
 
             await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
 

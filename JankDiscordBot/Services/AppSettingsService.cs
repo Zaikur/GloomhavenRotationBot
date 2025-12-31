@@ -7,6 +7,7 @@ public sealed class AppSettingsService
 {
     private readonly BotRepository _repo;
     private readonly IDataProtector _protector;
+    private readonly ILogger<AppSettingsService> _log;
 
     private const string KeyDiscordToken = "Discord.Token.Protected";
     private const string KeyDiscordGuildId = "Discord.GuildId";
@@ -15,11 +16,15 @@ public sealed class AppSettingsService
     private const string KeyAnnounceHour = "Announcements.Hour";
     private const string KeyAnnounceMinute = "Announcements.Minute";
     private const string KeyAutoAdvanceMinutesAfterStart = "Scheduling.AutoAdvanceMinutesAfterStart";
+    private const string DiscordTokenKey = "discord.token";
+    private const string DiscordGuildKey = "discord.guildId";
+    private const string DiscordRegKey = "discord.registerToGuild";
 
 
     public AppSettingsService(BotRepository repo, IDataProtectionProvider dp)
     {
         _repo = repo;
+        _log = log;
         _protector = dp.CreateProtector("GloomhavenRotationBot.DiscordToken.v1");
     }
 
@@ -128,36 +133,43 @@ public sealed class AppSettingsService
         await _repo.UpsertSettingAsync(KeyAnnounceMinute, minute.ToString());
     }
 
-    public async Task<(string? Token, ulong GuildId, bool RegisterToGuild)> GetDiscordConfigAsync()
+    public async Task<(string Token, ulong GuildId, bool RegisterToGuild)> GetDiscordConfigAsync()
     {
-        var tokenProtected = await _repo.GetSettingAsync(KeyDiscordToken);
-        var guildIdStr = await _repo.GetSettingAsync(KeyDiscordGuildId);
-        var regStr = await _repo.GetSettingAsync(KeyDiscordRegisterToGuild);
+        var protectedToken = await _repo.GetSettingAsync(DiscordTokenKey);
+        var guildStr = await _repo.GetSettingAsync(DiscordGuildKey);
+        var regStr = await _repo.GetSettingAsync(DiscordRegKey);
 
-        string? token = null;
-        if (!string.IsNullOrWhiteSpace(tokenProtected))
+        ulong.TryParse(guildStr, out var gid);
+        var reg = regStr == "1" || regStr?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+
+        if (string.IsNullOrWhiteSpace(protectedToken))
+            return ("", gid, reg);
+
+        try
         {
-            try { token = _protector.Unprotect(tokenProtected); }
-            catch { token = null; } // keys changed or invalid data
+            var token = _protector.Unprotect(protectedToken);
+            return (token, gid, reg);
         }
-
-        ulong.TryParse(guildIdStr, out var guildId);
-        var registerToGuild = !bool.TryParse(regStr, out var b) || b; // default true
-
-        return (string.IsNullOrWhiteSpace(token) ? null : token, guildId, registerToGuild);
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Stored Discord token could not be decrypted; clearing it.");
+            await _repo.UpsertSettingAsync(DiscordTokenKey, "");
+            return ("", gid, reg);
+        }
     }
 
-    public async Task SaveDiscordConfigAsync(string? token, ulong guildId, bool registerToGuild)
+    public async Task SaveDiscordConfigAsync(string? tokenPlain, ulong guildId, bool registerToGuild)
     {
-        // Only overwrite token if caller provided one
-        if (!string.IsNullOrWhiteSpace(token))
-        {
-            var protectedToken = _protector.Protect(token.Trim());
-            await _repo.UpsertSettingAsync(KeyDiscordToken, protectedToken);
-        }
+        // Always save guild/register
+        await _repo.UpsertSettingAsync(DiscordGuildKey, guildId.ToString());
+        await _repo.UpsertSettingAsync(DiscordRegKey, registerToGuild ? "1" : "0");
 
-        await _repo.UpsertSettingAsync(KeyDiscordGuildId, guildId.ToString());
-        await _repo.UpsertSettingAsync(KeyDiscordRegisterToGuild, registerToGuild.ToString());
+        // Only update token if user actually provided one
+        if (!string.IsNullOrWhiteSpace(tokenPlain))
+        {
+            var protectedToken = _protector.Protect(tokenPlain.Trim());
+            await _repo.UpsertSettingAsync(DiscordTokenKey, protectedToken);
+        }
     }
 
     public async Task<bool> HasDiscordConfigAsync()

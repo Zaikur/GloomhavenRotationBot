@@ -51,7 +51,7 @@ public sealed class AnnouncementSender
             return (false, "Announcement channel could not be found (check Channel ID).");
 
         var sessions = await _schedule.GetSessionsOccurringOnDateAsync(localDate);
-        if (sessions.Count == 0)
+        if (sessions.Count == 0 && !dryRun)
             return (true, "No session occurs on that date (nothing to announce).");
 
         int sent = 0;

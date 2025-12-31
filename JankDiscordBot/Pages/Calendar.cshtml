@@ -19,14 +19,52 @@
         max-height: 90vh;
         overflow: auto;
     }
-</style>
 
+    .gh-today {
+        border-color: rgba(13,110,253,1) !important;
+        box-shadow: 0 0 0 4px rgba(13,110,253,0.12);
+        background: linear-gradient(180deg, rgba(13,110,253,0.06), rgba(13,110,253,0.02));
+    }
+
+    .gh-past {
+        opacity: .55;
+    }
+
+    .gh-day-strike {
+        text-decoration: line-through;
+        opacity: .75;
+    }
+
+    .gh-cross {
+        position: absolute;
+        top: 6px;
+        right: 8px;
+        width: 22px;
+        height: 22px;
+        pointer-events: none;
+    }
+
+    .gh-cross::before,
+    .gh-cross::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 50%;
+        width: 100%;
+        height: 2px;
+        background: rgba(220,20,60,0.95);
+        transform-origin: center;
+    }
+
+    .gh-cross::before { transform: rotate(45deg); }
+    .gh-cross::after { transform: rotate(-45deg); }
+</style>
 @{
     var monthLabel = Model.MonthFirst.ToDateTime(new TimeOnly(0, 0)).ToString("MMMM yyyy");
     var prev = Model.MonthFirst.AddMonths(-1);
     var next = Model.MonthFirst.AddMonths(1);
 }
-
+ 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <div>
         <h2 class="m-0">Calendar</h2>
@@ -56,13 +94,12 @@
                     Model.SessionsByDay.TryGetValue(day, out var sessions);
 
                     <div class="col">
-                        @{
-                            var isToday = day == Model.TodayLocal;
-                        }
-                        <div class="border rounded-3 p-2 @(isToday ? "border-primary" : "")" style="min-height: 120px; box-shadow: @(isToday ? "0 0 0 1px rgba(13,110,253,.6)" : "none"); border-color: rgba(255,255,255,.12) !important; background: @(inMonth ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.01)")">
+                        @{ var isToday = day == Model.TodayLocal; var isPast = day < Model.TodayLocal; }
+                        <div class="border rounded-3 p-2 @(isToday ? "gh-today" : "") @(isPast ? "gh-past" : "")" style="position:relative; min-height: 120px; border-color: rgba(255,255,255,.12) !important; background: @(inMonth ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.01)")">
                             <div class="d-flex align-items-center justify-content-between">
                                 <div class="fw-semibold @(inMonth ? "" : "text-white-50")">@day.Day</div>
                             </div>
+                            @if(isPast){ <div class="gh-cross" aria-hidden="true"></div> }
 
                             @if (sessions != null && sessions.Count > 0)
                             {
@@ -74,7 +111,29 @@
                                         var time = s.EffectiveStartLocal.ToString("h:mm tt");
                                         var moved = s.OriginalDateLocal != DateOnly.FromDateTime(s.EffectiveStartLocal);
 
-                                        <a class="btn btn-sm btn-outline-light text-start"
+                                        var sessionIsPast = DateOnly.FromDateTime(s.EffectiveStartLocal) < Model.TodayLocal;
+
+                                        // DM/Food assignment: future = current index, past = previous index (heuristic)
+                                        string dmText = "_(not set)_";
+                                        string foodText = "_(not set)_";
+
+                                        if (Model.DmRotation.Members.Count > 0)
+                                        {
+                                            var dmCount = Model.DmRotation.Members.Count;
+                                            var dmIndex = (Model.DmRotation.Index + (sessionIsPast ? -1 : 0)) % dmCount;
+                                            if (dmIndex < 0) dmIndex += dmCount;
+                                            dmText = Model.GetMemberName(Model.DmRotation.Members[dmIndex]);
+                                        }
+
+                                        if (Model.FoodRotation.Members.Count > 0)
+                                        {
+                                            var fCount = Model.FoodRotation.Members.Count;
+                                            var fIndex = (Model.FoodRotation.Index + (sessionIsPast ? -1 : 0)) % fCount;
+                                            if (fIndex < 0) fIndex += fCount;
+                                            foodText = Model.GetMemberName(Model.FoodRotation.Members[fIndex]);
+                                        }
+
+                                        <a class="btn btn-sm btn-outline-light text-start @(cancelled ? "text-danger" : "")"
                                            href="/Calendar?year=@Model.MonthFirst.Year&month=@Model.MonthFirst.Month&edit=@s.OriginalDateLocal.ToString("yyyy-MM-dd")">
                                             <div class="d-flex align-items-center justify-content-between">
                                                 <span class="badge @badge me-2">@time</span>
@@ -86,6 +145,8 @@
                                                 {
                                                     <div class="text-white-50">@s.Note</div>
                                                 }
+
+                                                
                                             </div>
                                         </a>
                                     }
@@ -112,10 +173,12 @@
                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                     <div>
                         <h4 class="m-0">Edit session</h4>
-                        <div class="text-white-50 small">
-                            Original: <strong>@Model.EditingSession.OriginalDateLocal.ToString("dddd, MMM d")</strong>
-                            · Effective: <strong>@Model.EditingSession.EffectiveStartLocal.ToString("ddd, MMM d 'at' h:mm tt")</strong>
-                        </div>
+                                    @{ var assign = Model.GetAssignments(Model.EditingSession); }
+                                    <div class="text-white-50 small">
+                                        Original: <strong>@Model.EditingSession.OriginalDateLocal.ToString("dddd, MMM d")</strong>
+                                        · Effective: <strong>@Model.EditingSession.EffectiveStartLocal.ToString("ddd, MMM d 'at' h:mm tt")</strong>
+                                        <div class="mt-2"><strong>DM:</strong> @assign.Dm &nbsp; • &nbsp; <strong>Food:</strong> @assign.Food</div>
+                                    </div>
                     </div>
                     <a class="btn btn-outline-secondary" href="@closeUrl">✕</a>
                 </div>

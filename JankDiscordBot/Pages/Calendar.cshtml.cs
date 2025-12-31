@@ -7,11 +7,18 @@ public class CalendarModel : PageModel
 {
     private readonly BotRepository _repo;
     private readonly ScheduleService _schedule;
+    private readonly GuildMemberDirectory _directory;
 
-    public CalendarModel(BotRepository repo, ScheduleService schedule)
+    public RotationState DmRotation { get; private set; } = new();
+    public RotationState FoodRotation { get; private set; } = new();
+    public List<(ulong Id, string Name)> MemberDirectory { get; private set; } = new();
+    public Dictionary<string, SessionMarkersRow?> MarkersByOccurrence { get; private set; } = new();
+
+    public CalendarModel(BotRepository repo, ScheduleService schedule, GuildMemberDirectory directory)
     {
         _repo = repo;
         _schedule = schedule;
+        _directory = directory;
     }
 
     // Query params
@@ -49,6 +56,21 @@ public class CalendarModel : PageModel
 
         await LoadSessionsAsync(GridStart, GridStart.AddDays(41));
 
+        // load rotations & member directory so we can show DM/Food assignments on event cards
+        DmRotation = await _repo.GetRotationAsync(RotationRole.DM);
+        FoodRotation = await _repo.GetRotationAsync(RotationRole.Food);
+        MemberDirectory = await _directory.GetMembersAsync();
+
+        // load session markers (announced/advanced) for quick lookup in the view
+        MarkersByOccurrence.Clear();
+        foreach (var kv in SessionsByDay)
+        {
+            foreach (var s in kv.Value)
+            {
+                MarkersByOccurrence[s.OccurrenceId] = await _repo.GetMarkersAsync(s.OccurrenceId);
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(Edit) && DateOnly.TryParse(Edit, out var original))
         {
             EditingSession = await _schedule.GetSessionForOriginalDateAsync(original);
@@ -67,6 +89,41 @@ public class CalendarModel : PageModel
                 }
             }
         }
+    }
+
+    public string GetMemberName(ulong id)
+    {
+        var m = MemberDirectory.FirstOrDefault(x => x.Id == id);
+        if (m == default) return $"<{id}>";
+        return m.Name;
+    }
+
+    public (string Dm, string Food) GetAssignments(SessionInfo s)
+    {
+        if (s == null) return ("_(not set)_", "_(not set)_");
+
+        var sessionIsPast = DateOnly.FromDateTime(s.EffectiveStartLocal) < TodayLocal;
+
+        string dmText = "_(not set)_";
+        string foodText = "_(not set)_";
+
+        if (DmRotation.Members.Count > 0)
+        {
+            var dmCount = DmRotation.Members.Count;
+            var dmIndex = (DmRotation.Index + (sessionIsPast ? -1 : 0)) % dmCount;
+            if (dmIndex < 0) dmIndex += dmCount;
+            dmText = GetMemberName(DmRotation.Members[dmIndex]);
+        }
+
+        if (FoodRotation.Members.Count > 0)
+        {
+            var fCount = FoodRotation.Members.Count;
+            var fIndex = (FoodRotation.Index + (sessionIsPast ? -1 : 0)) % fCount;
+            if (fIndex < 0) fIndex += fCount;
+            foodText = GetMemberName(FoodRotation.Members[fIndex]);
+        }
+
+        return (dmText, foodText);
     }
 
     public async Task<IActionResult> OnPostSaveAsync()

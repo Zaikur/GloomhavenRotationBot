@@ -1,0 +1,88 @@
+﻿@page
+@model ScheduleModel
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h2 class="m-0">Schedule</h2>
+        <div class="text-white-50">Set the repeating rule used by Calendar, announcements, and auto-advance.</div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.Message))
+{
+    <div class="alert alert-@Model.MessageKind">@Model.Message</div>
+}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post" class="row g-3" id="scheduleForm">
+            <div class="col-12 col-lg-6">
+                <label class="form-label">Time zone</label>
+                <input class="form-control" name="TimeZoneId" value="@Model.TimeZoneId" />
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label">Frequency</label>
+                <select class="form-select" name="Frequency" id="freq">
+                    <option value="Weekly" selected="@(Model.Frequency=="Weekly")">Weekly</option>
+                    <option value="Monthly" selected="@(Model.Frequency=="Monthly")">Monthly</option>
+                </select>
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label">Interval</label>
+                <input class="form-control" type="number" min="1" max="52" name="Interval" value="@Model.Interval" />
+                <div class="form-text text-white-50">Every N weeks or N months</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Day of week</label>
+                <select class="form-select" name="DayOfWeekValue">
+                    @for (int i = 0; i <= 6; i++)
+                    {
+                        var name = ((DayOfWeek)i).ToString();
+                        <option value="@i" selected="@(Model.DayOfWeekValue==i)">@name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Time</label>
+                <input class="form-control" type="time" name="Time" value="@Model.Time" />
+            </div>
+
+            <div class="col-12" id="monthlyWeekRow">
+                <label class="form-label">Monthly rule</label>
+                <select class="form-select" name="MonthlyWeek">
+                    <option value="1" selected="@(Model.MonthlyWeek==1)">1st</option>
+                    <option value="2" selected="@(Model.MonthlyWeek==2)">2nd</option>
+                    <option value="3" selected="@(Model.MonthlyWeek==3)">3rd</option>
+                    <option value="4" selected="@(Model.MonthlyWeek==4)">4th</option>
+                    <option value="5" selected="@(Model.MonthlyWeek==5)">5th (or last)</option>
+                    <option value="-1" selected="@(Model.MonthlyWeek==-1)">Last</option>
+                </select>
+                <div class="form-text text-white-50">Example: “2nd Monday of the month”.</div>
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">Save</button>
+                <a class="btn btn-outline-secondary" href="/Calendar">View Calendar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    (function(){
+        const freq = document.getElementById('freq');
+        const row = document.getElementById('monthlyWeekRow');
+
+        function apply(){
+            const isMonthly = (freq.value === 'Monthly');
+            row.style.display = isMonthly ? '' : 'none';
+        }
+
+        freq.addEventListener('change', apply);
+        apply();
+    })();
+</script>

@@ -25,8 +25,8 @@ public class RostersModel : PageModel
 
     public async Task OnGetAsync()
     {
-        Dm = await _repo.GetRotationAsync(RotationRole.dm);
-        Cook = await _repo.GetRotationAsync(RotationRole.cook);
+        Dm = await _repo.GetRotationAsync(RotationRole.DM);
+        Cook = await _repo.GetRotationAsync(RotationRole.Food);
 
         GuildMembers = await _members.GetMembersAsync();
         _nameById = GuildMembers.ToDictionary(x => x.Id, x => x.Name);
@@ -109,5 +109,5 @@ public class RostersModel : PageModel
     }
 
     private static RotationRole ParseRole(string role)
-        => role?.Trim().ToLowerInvariant() == "cook" ? RotationRole.cook : RotationRole.dm;
+        => role?.Trim().ToLowerInvariant() == "food" ? RotationRole.Food : RotationRole.DM;
 }

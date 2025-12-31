@@ -49,6 +49,46 @@
                 <label class="form-check-label">Register commands to this guild (fast updates)</label>
             </div>
 
+            <hr class="border-secondary" />
+
+            <h5 class="mb-1">Announcements</h5>
+            <div class="text-white-50 small mb-3">Morning post about tonight’s session + assignments.</div>
+
+            <div class="col-12">
+                <label class="form-label">Announcement Channel ID</label>
+                <input class="form-control" name="AnnounceChannelId" value="@Model.AnnounceChannelId" placeholder="123456789012345678" />
+                <div class="form-text text-white-50">
+                    Enable Developer Mode in Discord → right-click the channel → Copy ID
+                </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Announcement time</label>
+                <input class="form-control" type="time" name="AnnounceTime" value="@Model.AnnounceTime" />
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-info" type="submit" asp-page-handler="TestAnnouncement">
+                    Test morning announcement
+                </button>
+            </div>
+            <div class="form-text text-white-50">
+                Sends a test message to the configured announcement channel
+            </div>
+
+            <hr class="border-secondary" />
+
+            <h5 class="mb-1">Auto-advance</h5>
+            <div class="text-white-50 small mb-3">
+                Automatically advances DM/Food after session start time if not cancelled.
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Advance minutes after start</label>
+                <input class="form-control" type="number" min="0" max="1440" name="AutoAdvanceMinutesAfterStart" value="@Model.AutoAdvanceMinutesAfterStart" />
+                <div class="form-text text-white-50">Example: 60 means advance one hour after start.</div>
+            </div>
+
             <div class="col-12 d-flex flex-wrap gap-2">
                 <button class="btn btn-primary" type="submit">Save</button>
 

@@ -33,13 +33,13 @@ builder.Services.AddSingleton(sp => new InteractionService(
 
 builder.Services.AddSingleton<InteractionHandler>();
 builder.Services.AddSingleton<GuildMemberDirectory>();
-
-// Data + settings
 builder.Services.AddSingleton<BotRepository>();
 builder.Services.AddSingleton<AppSettingsService>();
 builder.Services.AddSingleton<BotStatusService>();
-
-// Bot runtime
+builder.Services.AddSingleton<ScheduleService>();
+builder.Services.AddHostedService<MorningAnnouncementService>();
+builder.Services.AddSingleton<AnnouncementSender>();
+builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();
 
 var app = builder.Build();

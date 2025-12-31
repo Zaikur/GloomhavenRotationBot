@@ -8,12 +8,21 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 public class SetupModel : PageModel
 {
     private readonly AppSettingsService _settings;
+    private readonly AnnouncementSender _announcementSender;
 
-    public SetupModel(AppSettingsService settings) => _settings = settings;
+    public SetupModel(AppSettingsService settings, AnnouncementSender announcementSender)
+    {
+        _settings = settings;
+        _announcementSender = announcementSender;
+    }
 
     [BindProperty] public string GuildId { get; set; } = "";
     [BindProperty] public string? Token { get; set; }
     [BindProperty] public bool RegisterToGuild { get; set; } = true;
+    [BindProperty] public string AnnounceChannelId { get; set; } = "";
+    [BindProperty] public string AnnounceTime { get; set; } = "09:00"; // "HH:mm"
+    [BindProperty] public int AutoAdvanceMinutesAfterStart { get; set; } = 60;
+
 
     public bool HasToken { get; private set; }
     public string? Message { get; set; }
@@ -26,6 +35,10 @@ public class SetupModel : PageModel
         HasToken = !string.IsNullOrWhiteSpace(token);
         GuildId = gid == 0 ? "" : gid.ToString();
         RegisterToGuild = reg;
+        var (_, h, m) = await _settings.GetAnnouncementConfigAsync();
+        AnnounceTime = $"{h:D2}:{m:D2}";
+
+        AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -43,8 +56,37 @@ public class SetupModel : PageModel
         Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";
 
+        ulong.TryParse(AnnounceChannelId, out var chId);
+        var timeOk = TimeOnly.TryParse(AnnounceTime, out var t);
+        if (!timeOk)
+        {
+            Message = "Announcement time must be a valid time (HH:mm).";
+            MessageKind = "warning";
+            await ReloadTokenFlagAsync();
+            return Page();
+        }
+
+        await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
+        await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
+
         Token = null; // never echo back
         await ReloadTokenFlagAsync();
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostTestAnnouncementAsync()
+    {
+        var tzRule = await _settings.GetScheduleRuleAsync();
+        var tz = TimeZoneInfo.FindSystemTimeZoneById(tzRule.TimeZoneId);
+        var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
+        var today = DateOnly.FromDateTime(nowLocal);
+
+        var (ok, msg) = await _announcementSender.SendMorningAsync(today, dryRun: true);
+
+        Message = msg;
+        MessageKind = ok ? "success" : "warning";
+
+        await OnGetAsync(); // reload fields so the page shows current settings
         return Page();
     }
 

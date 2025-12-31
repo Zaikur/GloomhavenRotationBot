@@ -1,0 +1,176 @@
+﻿@page
+@model CalendarModel
+
+<style>
+    .gh-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.60);
+        backdrop-filter: blur(2px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2500;
+        padding: 1rem;
+    }
+
+    .gh-modal {
+        width: min(780px, 96vw);
+        max-height: 90vh;
+        overflow: auto;
+    }
+</style>
+
+@{
+    var monthLabel = Model.MonthFirst.ToDateTime(new TimeOnly(0, 0)).ToString("MMMM yyyy");
+    var prev = Model.MonthFirst.AddMonths(-1);
+    var next = Model.MonthFirst.AddMonths(1);
+}
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h2 class="m-0">Calendar</h2>
+        <div class="text-white-50">@monthLabel</div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" href="/Calendar?year=@prev.Year&month=@prev.Month">← Prev</a>
+        <a class="btn btn-outline-secondary" href="/Calendar">Today</a>
+        <a class="btn btn-outline-secondary" href="/Calendar?year=@next.Year&month=@next.Month">Next →</a>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-2 p-md-3">
+        <div class="row g-2 text-white-50 small mb-2 px-1">
+            <div class="col">Mon</div><div class="col">Tue</div><div class="col">Wed</div><div class="col">Thu</div><div class="col">Fri</div><div class="col">Sat</div><div class="col">Sun</div>
+        </div>
+
+        @for (int week = 0; week < 6; week++)
+        {
+            <div class="row g-2 mb-2">
+                @for (int dow = 0; dow < 7; dow++)
+                {
+                    var day = Model.GridDays[week * 7 + dow];
+                    var inMonth = day.Month == Model.MonthFirst.Month;
+                    Model.SessionsByDay.TryGetValue(day, out var sessions);
+
+                    <div class="col">
+                        @{
+                            var isToday = day == Model.TodayLocal;
+                        }
+                        <div class="border rounded-3 p-2 @(isToday ? "border-primary" : "")" style="min-height: 120px; box-shadow: @(isToday ? "0 0 0 1px rgba(13,110,253,.6)" : "none"); border-color: rgba(255,255,255,.12) !important; background: @(inMonth ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.01)")">
+                            <div class="d-flex align-items-center justify-content-between">
+                                <div class="fw-semibold @(inMonth ? "" : "text-white-50")">@day.Day</div>
+                            </div>
+
+                            @if (sessions != null && sessions.Count > 0)
+                            {
+                                <div class="mt-2 d-grid gap-2">
+                                    @foreach (var s in sessions)
+                                    {
+                                        var cancelled = s.IsCancelled;
+                                        var badge = cancelled ? "bg-danger" : "bg-success";
+                                        var time = s.EffectiveStartLocal.ToString("h:mm tt");
+                                        var moved = s.OriginalDateLocal != DateOnly.FromDateTime(s.EffectiveStartLocal);
+
+                                        <a class="btn btn-sm btn-outline-light text-start"
+                                           href="/Calendar?year=@Model.MonthFirst.Year&month=@Model.MonthFirst.Month&edit=@s.OriginalDateLocal.ToString("yyyy-MM-dd")">
+                                            <div class="d-flex align-items-center justify-content-between">
+                                                <span class="badge @badge me-2">@time</span>
+                                                <span class="text-white-50 small">@((moved) ? "moved" : "")</span>
+                                            </div>
+                                            <div class="small mt-1">
+                                                Occurrence: @s.OriginalDateLocal.ToString("MMM d")
+                                                @if (!string.IsNullOrWhiteSpace(s.Note))
+                                                {
+                                                    <div class="text-white-50">@s.Note</div>
+                                                }
+                                            </div>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                            else if (inMonth)
+                            {
+                                <div class="text-white-50 small mt-2">—</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@if (Model.EditingSession != null)
+{
+    var closeUrl = $"/Calendar?year={Model.MonthFirst.Year}&month={Model.MonthFirst.Month}";
+    <div class="gh-overlay" id="editOverlay" data-close="@closeUrl">
+        <div class="card shadow-lg gh-modal">
+            <div class="card-body">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                    <div>
+                        <h4 class="m-0">Edit session</h4>
+                        <div class="text-white-50 small">
+                            Original: <strong>@Model.EditingSession.OriginalDateLocal.ToString("dddd, MMM d")</strong>
+                            · Effective: <strong>@Model.EditingSession.EffectiveStartLocal.ToString("ddd, MMM d 'at' h:mm tt")</strong>
+                        </div>
+                    </div>
+                    <a class="btn btn-outline-secondary" href="@closeUrl">✕</a>
+                </div>
+
+                <form method="post" class="row g-3">
+                    <input type="hidden" name="Edit" value="@Model.EditingSession.OriginalDateLocal.ToString("yyyy-MM-dd")" />
+                    <input type="hidden" name="Year" value="@Model.MonthFirst.Year" />
+                    <input type="hidden" name="Month" value="@Model.MonthFirst.Month" />
+
+                    <div class="col-12 form-check">
+                        <input class="form-check-input" type="checkbox" name="IsCancelled" value="true" @(Model.IsCancelled ? "checked" : "") />
+                        <label class="form-check-label">Cancelled</label>
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Move to date (optional)</label>
+                        <input class="form-control" type="date" name="MoveToDate" value="@Model.MoveToDate" />
+                    </div>
+
+                    <div class="col-12 col-md-6">
+                        <label class="form-label">Move to time (optional)</label>
+                        <input class="form-control" type="time" name="MoveToTime" value="@Model.MoveToTime" />
+                        <div class="form-text text-white-50">Leave blank to keep the default start time.</div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">Note</label>
+                        <input class="form-control" name="Note" value="@Model.Note" placeholder="(optional)" />
+                    </div>
+
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button class="btn btn-primary" type="submit" asp-page-handler="Save">Save</button>
+                        <button class="btn btn-outline-danger" type="submit" asp-page-handler="Clear">Clear override</button>
+                        <a class="btn btn-outline-secondary ms-auto" href="@closeUrl">Close</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // close when clicking backdrop
+        (function(){
+          const overlay = document.getElementById('editOverlay');
+          const closeUrl = overlay?.dataset?.close;
+          if (!overlay || !closeUrl) return;
+
+          overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) window.location.href = closeUrl;
+          });
+
+          // close on Escape
+          document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') window.location.href = closeUrl;
+          });
+        })();
+    </script>
+}

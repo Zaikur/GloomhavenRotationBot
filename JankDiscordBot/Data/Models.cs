@@ -2,8 +2,8 @@
 
 public enum RotationRole
 {
-    dm = 0,
-    cook = 1
+    DM = 0,
+    Food = 1
 }
 
 public sealed class RotationState

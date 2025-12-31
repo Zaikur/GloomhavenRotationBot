@@ -105,3 +105,61 @@ services:
     restart: unless-stopped
     volumes:
       - /mnt/pathTo/YourAppDirectory
+```
+## Accessing the Web UI
+
+After deploying, open:
+
+- `http://<truenas-ip>:5055`
+
+## Updating on TrueNAS
+
+TrueNAS **Custom Apps** do **not** auto-update when `:latest` changes. To pull new changes:
+
+- **Edit** the app and click **Save** (redeploy), **or**
+- **Stop** / **Start** the app
+
+With `pull_policy: always`, the image will be pulled during redeploy.
+
+## Data & Persistence
+
+The bot stores its state in **SQLite** under the mounted volume.
+
+### Things stored
+- Discord config (encrypted token + guild id)
+- Announcement config (channel id + time)
+- Schedule recurrence rule
+- Session overrides (cancel/move/note)
+- Rotation rosters (DM/Food) and current index
+- “Already announced” markers (to prevent double morning announcements)
+
+### To migrate or reset
+- Stop the container
+- Backup or delete the SQLite file under the mounted volume
+- Restart
+
+## Common Troubleshooting
+
+### “Missing Access” / command registration errors
+- Ensure the bot is in the guild and has permissions.
+- Ensure `GuildId` is correct.
+- If registering commands to a guild, the bot must be able to access that guild.
+
+### Announcements don’t send
+- Announcement Channel ID must be a real channel in the guild.
+- Bot needs permission to send messages to that channel.
+- Bot must be connected (token/guild saved).
+- Use **Test morning announcement** from Setup to validate.
+
+### Web UI not reachable in Docker
+- Confirm `ASPNETCORE_URLS=http://0.0.0.0:5055`
+- Confirm container port is mapped: `5055:5055`
+- Confirm host firewall rules
+
+## Development Notes
+- Prefer publishing versioned tags (sha/semver) for predictable deployments.
+- Slash commands should be ephemeral to reduce spam.
+- Schedule recurrence rule drives:
+  - Calendar generation
+  - Morning announcements
+  - Auto-advance behavior

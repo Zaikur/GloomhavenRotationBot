@@ -21,7 +21,7 @@ public sealed class AppSettingsService
     private const string DiscordRegKey = "discord.registerToGuild";
 
 
-    public AppSettingsService(BotRepository repo, IDataProtectionProvider dp)
+    public AppSettingsService(BotRepository repo, IDataProtectionProvider dp, ILogger<AppSettingsService> log)
     {
         _repo = repo;
         _log = log;

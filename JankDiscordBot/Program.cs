@@ -17,14 +17,6 @@ builder.Services.AddRazorPages(options =>
     options.Conventions.ConfigureFilter(new IgnoreAntiforgeryTokenAttribute());
 });
 
-
-var dpKeysPath = "/app/data/dp-keys";
-Directory.CreateDirectory(dpKeysPath);
-
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(dpKeysPath))
-    .SetApplicationName("GloomhavenRotationBot");
-
 // Discord services
 builder.Services.AddSingleton(sp => new DiscordSocketClient(new DiscordSocketConfig
 {

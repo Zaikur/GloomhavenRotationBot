@@ -9,9 +9,6 @@ public sealed class AppSettingsService
     private readonly IDataProtector _protector;
     private readonly ILogger<AppSettingsService> _log;
 
-    private const string KeyDiscordToken = "Discord.Token.Protected";
-    private const string KeyDiscordGuildId = "Discord.GuildId";
-    private const string KeyDiscordRegisterToGuild = "Discord.RegisterCommandsToGuild";
     private const string KeyAnnounceChannelId = "Discord.AnnounceChannelId";
     private const string KeyAnnounceHour = "Announcements.Hour";
     private const string KeyAnnounceMinute = "Announcements.Minute";
@@ -135,41 +132,27 @@ public sealed class AppSettingsService
 
     public async Task<(string Token, ulong GuildId, bool RegisterToGuild)> GetDiscordConfigAsync()
     {
-        var protectedToken = await _repo.GetSettingAsync(DiscordTokenKey);
-        var guildStr = await _repo.GetSettingAsync(DiscordGuildKey);
-        var regStr = await _repo.GetSettingAsync(DiscordRegKey);
+        var token = (await _repo.GetSettingAsync("Discord:Token"))?.Trim() ?? "";
+        var gidStr = (await _repo.GetSettingAsync("Discord:GuildId"))?.Trim() ?? "";
+        var regStr = (await _repo.GetSettingAsync("Discord:RegisterCommandsToGuild"))?.Trim() ?? "true";
 
-        ulong.TryParse(guildStr, out var gid);
-        var reg = regStr == "1" || regStr?.Equals("true", StringComparison.OrdinalIgnoreCase) == true;
+        ulong.TryParse(gidStr, out var gid);
+        var reg = regStr.Equals("true", StringComparison.OrdinalIgnoreCase) || regStr == "1";
 
-        if (string.IsNullOrWhiteSpace(protectedToken))
-            return ("", gid, reg);
+        if (token.StartsWith("CfDJ8", StringComparison.Ordinal))
+            token = "";
 
-        try
-        {
-            var token = _protector.Unprotect(protectedToken);
-            return (token, gid, reg);
-        }
-        catch (Exception ex)
-        {
-            _log.LogWarning(ex, "Stored Discord token could not be decrypted; clearing it.");
-            await _repo.UpsertSettingAsync(DiscordTokenKey, "");
-            return ("", gid, reg);
-        }
+        return (token, gid, reg);
     }
 
     public async Task SaveDiscordConfigAsync(string? tokenPlain, ulong guildId, bool registerToGuild)
     {
-        // Always save guild/register
-        await _repo.UpsertSettingAsync(DiscordGuildKey, guildId.ToString());
-        await _repo.UpsertSettingAsync(DiscordRegKey, registerToGuild ? "1" : "0");
+        await _repo.UpsertSettingAsync("Discord:GuildId", guildId.ToString());
+        await _repo.UpsertSettingAsync("Discord:RegisterCommandsToGuild", registerToGuild ? "true" : "false");
 
-        // Only update token if user actually provided one
+        // only overwrite token if user supplied one
         if (!string.IsNullOrWhiteSpace(tokenPlain))
-        {
-            var protectedToken = _protector.Protect(tokenPlain.Trim());
-            await _repo.UpsertSettingAsync(DiscordTokenKey, protectedToken);
-        }
+            await _repo.UpsertSettingAsync("Discord:Token", tokenPlain.Trim());
     }
 
     public async Task<bool> HasDiscordConfigAsync()

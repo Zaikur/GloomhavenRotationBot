@@ -29,7 +29,7 @@
             <div class="alert alert-@Model.MessageKind mb-3">@Model.Message</div>
         }
 
-        <form method="post" class="row g-3">
+        <form method="post" asp-antiforgery="false" class="row g-3">
             <div class="col-12">
                 <label class="form-label">Guild ID</label>
                 <input class="form-control" name="GuildId" value="@Model.GuildId" />

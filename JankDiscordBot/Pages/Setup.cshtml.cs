@@ -85,41 +85,68 @@ public class SetupModel : PageModel
         return Page();
     }
 
-    public async Task<IActionResult> OnPostTestAnnouncementAsync()
+    public async Task<IActionResult> OnPostTestAsync()
     {
-        ulong chId = 0;
-        if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
-            (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
+        if (!ulong.TryParse(GuildId, out var gid) || gid == 0)
         {
-            Message = "Announcement Channel ID must be a valid non-zero number (or leave blank to disable).";
+            Message = "Enter a valid GuildId first.";
             MessageKind = "warning";
             await ReloadTokenFlagAsync();
             return Page();
         }
 
-        if (!TimeOnly.TryParse(AnnounceTime, out var t))
+        var (storedToken, _, _) = await _settings.GetDiscordConfigAsync();
+        var tokenToTest = !string.IsNullOrWhiteSpace(Token) ? Token!.Trim() : storedToken;
+
+        if (string.IsNullOrWhiteSpace(tokenToTest))
         {
-            Message = "Announcement time must be a valid time (HH:mm).";
+            Message = "No token to test. Paste a token (or save one first).";
             MessageKind = "warning";
             await ReloadTokenFlagAsync();
             return Page();
         }
 
-        await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
-        await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
+        try
+        {
+            using var rest = new Discord.Rest.DiscordRestClient();
+            await rest.LoginAsync(Discord.TokenType.Bot, tokenToTest);
 
-        // Now send preview/test
-        var tzRule = await _settings.GetScheduleRuleAsync();
-        var tz = TimeZoneInfo.FindSystemTimeZoneById(tzRule.TimeZoneId);
-        var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
-        var today = DateOnly.FromDateTime(nowLocal);
+            var me = await rest.GetCurrentUserAsync();
+            var guild = await rest.GetGuildAsync(gid);
 
-        var (ok, msg) = await _announcementSender.SendMorningAsync(today, dryRun: true);
+            if (guild == null)
+            {
+                Message = "Token is valid, but the bot cannot access that GuildId. Is the bot invited to that server?";
+                MessageKind = "danger";
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(Token))
+                {
+                    await _settings.SaveDiscordConfigAsync(tokenToTest, gid, RegisterToGuild);
+                }
 
-        Message = msg;
-        MessageKind = ok ? "success" : "warning";
+                Message = $"Success! Logged in as {me.Username} and can access guild {guild.Name} ({guild.Id})." +
+                          (!string.IsNullOrWhiteSpace(Token) ? " Token saved." : "");
+                MessageKind = "success";
+            }
+        }
+        catch (Discord.Net.HttpException hex)
+        {
+            MessageKind = "danger";
+            Message = $"Discord API error: {hex.HttpCode} — {hex.Message}";
+        }
+        catch (Exception ex)
+        {
+            MessageKind = "danger";
+            Message = $"Test failed: {ex.Message}";
+        }
+        finally
+        {
+            Token = null; // never echo
+            await ReloadTokenFlagAsync();
+        }
 
-        await OnGetAsync();
         return Page();
     }
 

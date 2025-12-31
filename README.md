@@ -5,8 +5,8 @@ A self-hosted Discord bot + local Web UI for managing a Gloomhaven group:
 - Tracks **who’s up next** for **DM** and **Food**
 - Lets you **skip/swap** turns without removing someone from the rotation
 - Maintains a **session calendar** (month view) with per-occurrence **cancel/move/note**
-- Sends a **morning announcement** to a configured channel (and supports a **Test** button)
-- Can **auto-advance** rotations after a session time passes (if not cancelled)
+- Sends a **morning announcement** to a configured channel
+- Can **auto-advance** rotations after a session time passes if the session wasn't cancelled.
 - Designed to run as a container on **TrueNAS SCALE** (or any Docker host)
 
 Everything is stored in a local SQLite database on a mounted volume.
@@ -26,7 +26,7 @@ A local web UI for setup and maintenance:
 - Auto-advance: minutes after start
 - Schedule: weekly/monthly recurrence rule (weekday + time, interval, etc.)
 - Calendar: month view with “today” highlight and an overlay editor to cancel/move/note
-- Rosters: manage DM and Food member ordering (if you keep this page)
+- Rosters: manage DM and Food member ordering
 
 ---
 

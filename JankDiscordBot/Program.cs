@@ -1,3 +1,4 @@
+using System.IO;
 using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
@@ -11,9 +12,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Web UI
 builder.Services.AddRazorPages();
 
-// Persist DP keys so encrypted token can be decrypted after restart (important for containers)
+var dpKeysPath = "/app/data/dp-keys";
+Directory.CreateDirectory(dpKeysPath);
+
 builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(AppContext.BaseDirectory, "data", "keys")));
+    .PersistKeysToFileSystem(new DirectoryInfo(dpKeysPath))
+    .SetApplicationName("GloomhavenRotationBot");
 
 // Discord services
 builder.Services.AddSingleton(sp => new DiscordSocketClient(new DiscordSocketConfig
@@ -37,8 +41,8 @@ builder.Services.AddSingleton<BotRepository>();
 builder.Services.AddSingleton<AppSettingsService>();
 builder.Services.AddSingleton<BotStatusService>();
 builder.Services.AddSingleton<ScheduleService>();
-builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddSingleton<AnnouncementSender>();
+builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();
 

@@ -18,18 +18,6 @@ Everything is stored in a local SQLite database on a mounted volume.
 ### Discord Commands (ephemeral / private)
 Commands respond privately (ephemeral), so channels don’t get spammed.
 
-- `/gloom who dm` – shows who is up next for DM
-- `/gloom who food` – shows who is up next for Food
-- `/gloom skip dm "reason"` – swaps current DM with next (does not remove anyone)
-- `/gloom skip food "reason"` – same for Food
-- `/gloom next 4` – shows upcoming sessions
-- `/gloom cancel 2026-01-05 "Out of town"` – cancels an occurrence (stores note like `User: Out of town`)
-- `/gloom move 2026-01-05 2026-01-06 18:30 "Moved to Tue"` – moves an occurrence
-- `/gloom clear 2026-01-05` – clears cancel/move/note override
-- `/gloom preview` – shows the message that would be posted by the morning announcement (privately)
-
-> Note: Command list may differ slightly if you renamed modules/roles. Check the Discord slash command menu.
-
 ### Web UI (LAN only)
 A local web UI for setup and maintenance:
 
@@ -56,12 +44,10 @@ A local web UI for setup and maintenance:
 
 1. Create an application in the Discord Developer Portal.
 2. Add a **Bot** to the application.
-3. Enable **Server Members Intent** (required if you list members in Web UI).
+3. Enable **Server Members Intent** (required so user ID's can be selected in the webUI).
 4. Invite the bot to your server (guild) with permissions:
    - `applications.commands`
    - `Send Messages` (for announcements)
-   - `Read Message History` (optional)
-   - Anything else you choose
 
 ---
 
@@ -110,14 +96,13 @@ services:
 
 After deploying, open:
 
-- `http://<truenas-ip>:5055`
+- `http://<ip>:5055`
 
 ## Updating on TrueNAS
 
 TrueNAS **Custom Apps** do **not** auto-update when `:latest` changes. To pull new changes:
 
-- **Edit** the app and click **Save** (redeploy), **or**
-- **Stop** / **Start** the app
+- **Edit** the app and click **Save** (redeploy)
 
 With `pull_policy: always`, the image will be pulled during redeploy.
 

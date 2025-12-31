@@ -45,9 +45,13 @@ A local web UI for setup and maintenance:
 1. Create an application in the Discord Developer Portal.
 2. Add a **Bot** to the application.
 3. Enable **Server Members Intent** (required so user ID's can be selected in the webUI).
-4. Invite the bot to your server (guild) with permissions:
+4. Invite the bot to your server (guild) with scopes:
    - `applications.commands`
-   - `Send Messages` (for announcements)
+   - `bot`
+   
+   Bot Permissions:
+   - `Send Messages`
+   - `View Channels`
 
 ---
 

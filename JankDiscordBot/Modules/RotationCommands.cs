@@ -35,39 +35,6 @@ public sealed class RotationCommands : InteractionModuleBase<SocketInteractionCo
         await FollowupAsync($"**{Pretty(rr.Value)}:** <@{id}>", ephemeral: true);
     }
 
-    [SlashCommand("skip", "I can't do it this time (swap with next person)")]
-    public async Task SkipAsync([Summary(description: "Role: dm or food")] string role,
-                                [Summary(description: "Optional reason")] string? reason = null)
-    {
-        await DeferAsync(ephemeral: true);
-
-        var rr = ParseRole(role);
-        if (rr is null)
-        {
-            await FollowupAsync("Role must be `dm` or `food`.", ephemeral: true);
-            return;
-        }
-
-        var state = await _repo.GetRotationAsync(rr.Value);
-        if (state.Members.Count < 2)
-        {
-            await FollowupAsync($"Not enough members to skip **{Pretty(rr.Value)}** (need at least 2).", ephemeral: true);
-            return;
-        }
-
-        // Swap current with next (wrap)
-        var i = state.Index % state.Members.Count;
-        var j = (i + 1) % state.Members.Count;
-
-        (state.Members[i], state.Members[j]) = (state.Members[j], state.Members[i]);
-
-        await _repo.SaveRotationAsync(rr.Value, state);
-
-        var nowUp = state.Members[i];
-        var note = string.IsNullOrWhiteSpace(reason) ? "" : $"\n📝 {reason.Trim()}";
-        await FollowupAsync($"Skipped **{Pretty(rr.Value)}**. Now up: <@{nowUp}>.{note}", ephemeral: true);
-    }
-
     [SlashCommand("advance", "Manually advance the rotation (dm, food, or both)")]
     public async Task AdvanceAsync([Summary(description: "Role: dm, food, or all")] string role)
     {

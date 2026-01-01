@@ -1,4 +1,6 @@
 ﻿using System.Globalization;
+using System.Linq;
+using Discord;
 using Discord.Interactions;
 using GloomhavenRotationBot.Data;
 using GloomhavenRotationBot.Services;
@@ -45,120 +47,76 @@ public sealed class ScheduleCommands : InteractionModuleBase<SocketInteractionCo
         await FollowupAsync(string.Join("\n", lines), ephemeral: true);
     }
 
-    [SlashCommand("cancel", "Cancel a specific occurrence (by original date)")]
-    public async Task CancelAsync(
-        [Summary(description: "Original date (YYYY-MM-DD)")] string originalDate,
-        [Summary(description: "Reason (optional)")] string? reason = null)
+    [SlashCommand("cancel", "Cancel an upcoming occurrence")]
+    public async Task CancelAsync()
     {
         await DeferAsync(ephemeral: true);
 
-        if (!TryParseDate(originalDate, out var d))
+        var list = await GetUpcomingSessionsAsync();
+        if (list.Count == 0)
         {
-            await FollowupAsync("Date must be `YYYY-MM-DD`.", ephemeral: true);
+            await FollowupAsync("No upcoming sessions to cancel.", ephemeral: true);
             return;
         }
 
-        var existing = await _repo.GetSessionOverrideAsync(d);
+        var menu = BuildSessionSelectMenu($"sched-cancel:{Context.User.Id}", list, "Select an occurrence to cancel");
 
-        // Keep any existing move, but mark cancelled.
-        var movedTo = existing?.MovedToLocal;
-
-        // If a reason is provided, prefix it with the caller's display name.
-        var who = GetCallerName();
-        var newNote = string.IsNullOrWhiteSpace(reason)
-            ? existing?.Note
-            : PrefixNote(who, reason);
-
-        await _repo.UpsertSessionOverrideAsync(new SessionOverrideRow(
-            d,
-            IsCancelled: true,
-            MovedToLocal: movedTo,
-            Note: string.IsNullOrWhiteSpace(newNote) ? null : newNote
-        ));
-
-        await FollowupAsync($"Cancelled occurrence **{d:yyyy-MM-dd}**.", ephemeral: true);
+        await FollowupAsync("Select an occurrence to cancel:",
+            components: new ComponentBuilder().WithSelectMenu(menu).Build(),
+            ephemeral: true);
     }
 
-    [SlashCommand("move", "Move a specific occurrence (by original date) to a new date/time")]
-    public async Task MoveAsync(
-        [Summary(description: "Original date (YYYY-MM-DD)")] string originalDate,
-        [Summary(description: "New date (YYYY-MM-DD)")] string newDate,
-        [Summary(description: "New time (HH:mm, optional)")] string? newTime = null,
-        [Summary(description: "Note (optional)")] string? note = null)
+    [SlashCommand("move", "Move an upcoming occurrence")]
+    public async Task MoveAsync()
     {
         await DeferAsync(ephemeral: true);
 
-        if (!TryParseDate(originalDate, out var od) || !TryParseDate(newDate, out var nd))
+        var list = await GetUpcomingSessionsAsync();
+        if (list.Count == 0)
         {
-            await FollowupAsync("Dates must be `YYYY-MM-DD`.", ephemeral: true);
+            await FollowupAsync("No upcoming sessions to move.", ephemeral: true);
             return;
         }
 
-        TimeOnly t;
-        if (string.IsNullOrWhiteSpace(newTime))
-        {
-            // use the rule’s default time (by asking schedule for the original date)
-            var s = await _schedule.GetSessionForOriginalDateAsync(od);
-            t = s != null ? TimeOnly.FromDateTime(s.EffectiveStartLocal) : new TimeOnly(18, 30);
-        }
-        else if (!TimeOnly.TryParseExact(newTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out t))
-        {
-            await FollowupAsync("Time must be `HH:mm` (24-hour).", ephemeral: true);
-            return;
-        }
+        var menu = BuildSessionSelectMenu($"sched-move:{Context.User.Id}", list, "Select an occurrence to move");
 
-        var moved = nd.ToDateTime(t);
-
-        var existing = await _repo.GetSessionOverrideAsync(od);
-
-        var who = GetCallerName();
-        var newNote = string.IsNullOrWhiteSpace(note)
-            ? existing?.Note
-            : PrefixNote(who, note);
-
-        await _repo.UpsertSessionOverrideAsync(new SessionOverrideRow(
-            od,
-            IsCancelled: existing?.IsCancelled ?? false,
-            MovedToLocal: moved,
-            Note: string.IsNullOrWhiteSpace(newNote) ? null : newNote
-        ));
-
-        await FollowupAsync($"Moved occurrence **{od:yyyy-MM-dd}** → **{moved:yyyy-MM-dd h:mm tt}**.", ephemeral: true);
+        await FollowupAsync("Select an occurrence to move:",
+            components: new ComponentBuilder().WithSelectMenu(menu).Build(),
+            ephemeral: true);
     }
 
     [SlashCommand("clear", "Clear override (undo cancel/move/note) for an occurrence")]
-    public async Task ClearAsync([Summary(description: "Original date (YYYY-MM-DD)")] string originalDate)
+    public async Task ClearAsync()
     {
         await DeferAsync(ephemeral: true);
 
-        if (!TryParseDate(originalDate, out var d))
+        var list = await GetUpcomingSessionsAsync();
+        if (list.Count == 0)
         {
-            await FollowupAsync("Date must be `YYYY-MM-DD`.", ephemeral: true);
+            await FollowupAsync("No upcoming sessions to clear.", ephemeral: true);
             return;
         }
 
-        await _repo.DeleteSessionOverrideAsync(d);
-        await FollowupAsync($"Cleared override for **{d:yyyy-MM-dd}**.", ephemeral: true);
+        var menu = BuildSessionSelectMenu($"sched-clear:{Context.User.Id}", list, "Select an occurrence to clear");
+
+        await FollowupAsync("Select an occurrence to clear:",
+            components: new ComponentBuilder().WithSelectMenu(menu).Build(),
+            ephemeral: true);
     }
 
-    [SlashCommand("preview", "Preview the morning announcement privately (what would be posted)")]
-    public async Task PreviewAsync(
-        [Summary(description: "Optional date (YYYY-MM-DD). Default is today.")] string? date = null)
+    [SlashCommand("preview", "Preview the next morning announcement privately")]
+    public async Task PreviewAsync()
     {
         await DeferAsync(ephemeral: true);
 
-        DateOnly d;
-        if (string.IsNullOrWhiteSpace(date))
+        var next = await GetUpcomingSessionsAsync(1);
+        if (next.Count == 0)
         {
-            var nowLocal = await _schedule.LocalNowAsync();
-            d = DateOnly.FromDateTime(nowLocal);
-        }
-        else if (!TryParseDate(date, out d))
-        {
-            await FollowupAsync("Date must be `YYYY-MM-DD`.", ephemeral: true);
+            await FollowupAsync("No upcoming sessions to preview.", ephemeral: true);
             return;
         }
 
+        var d = DateOnly.FromDateTime(next[0].EffectiveStartLocal);
         var (ok, msg) = await _announcer.BuildMorningTextAsync(d);
         await FollowupAsync(ok ? msg : $"⚠️ {msg}", ephemeral: true);
     }
@@ -168,7 +126,6 @@ public sealed class ScheduleCommands : InteractionModuleBase<SocketInteractionCo
 
     private async Task<List<SessionInfo>> GetNextSessionsAsync(DateOnly start, int count)
     {
-        // brute-force scan forward (fine for small counts)
         var list = new List<SessionInfo>();
         for (int i = 0; i < 366 && list.Count < count; i++)
         {
@@ -188,6 +145,208 @@ public sealed class ScheduleCommands : InteractionModuleBase<SocketInteractionCo
             }
         }
         return list;
+    }
+
+    private async Task<List<SessionInfo>> GetUpcomingSessionsAsync(int count = 10)
+    {
+        var nowLocal = await _schedule.LocalNowAsync();
+        return await GetNextSessionsAsync(DateOnly.FromDateTime(nowLocal), count);
+    }
+
+    private SelectMenuBuilder BuildSessionSelectMenu(string customId, IEnumerable<SessionInfo> sessions, string placeholder)
+    {
+        var menu = new SelectMenuBuilder()
+            .WithCustomId(customId)
+            .WithPlaceholder(placeholder);
+
+        foreach (var s in sessions)
+        {
+            var status = s.IsCancelled ? "🛑 Cancelled" : "✅ On";
+            var moved = s.OriginalDateLocal != DateOnly.FromDateTime(s.EffectiveStartLocal) ? " (moved)" : "";
+            var label = $"{s.EffectiveStartLocal:ddd, MMM d h:mm tt}";
+            var desc = $"{status}{moved}";
+
+            menu.AddOption(label, s.OriginalDateLocal.ToString("yyyy-MM-dd"), desc.Length == 0 ? null : desc);
+        }
+
+        return menu;
+    }
+
+    private bool IsCaller(string userId)
+        => Context.User?.Id.ToString() == userId;
+
+    [ComponentInteraction("sched-cancel:*")]
+    public async Task HandleCancelSelectionAsync(string userId, string[] selected)
+    {
+        if (!IsCaller(userId))
+        {
+            await RespondAsync("That menu isn’t for you.", ephemeral: true);
+            return;
+        }
+
+        var chosen = selected.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(chosen))
+        {
+            await RespondAsync("No occurrence selected.", ephemeral: true);
+            return;
+        }
+
+        await RespondWithModalAsync<CancelModal>($"sched-cancel-modal:{userId}:{chosen}");
+    }
+
+    [ModalInteraction("sched-cancel-modal:*:*")]
+    public async Task HandleCancelModalAsync(string userId, string originalDate, CancelModal modal)
+    {
+        if (!IsCaller(userId))
+        {
+            await RespondAsync("That modal isn’t for you.", ephemeral: true);
+            return;
+        }
+
+        if (!TryParseDate(originalDate, out var d))
+        {
+            await RespondAsync("Could not parse the selected date.", ephemeral: true);
+            return;
+        }
+
+        var existing = await _repo.GetSessionOverrideAsync(d);
+        var movedTo = existing?.MovedToLocal;
+
+        var who = GetCallerName();
+        var newNote = string.IsNullOrWhiteSpace(modal.Reason)
+            ? existing?.Note
+            : PrefixNote(who, modal.Reason);
+
+        await _repo.UpsertSessionOverrideAsync(new SessionOverrideRow(
+            d,
+            IsCancelled: true,
+            MovedToLocal: movedTo,
+            Note: string.IsNullOrWhiteSpace(newNote) ? null : newNote
+        ));
+
+        await RespondAsync($"Cancelled occurrence **{d:yyyy-MM-dd}**.", ephemeral: true);
+    }
+
+    [ComponentInteraction("sched-move:*")]
+    public async Task HandleMoveSelectionAsync(string userId, string[] selected)
+    {
+        if (!IsCaller(userId))
+        {
+            await RespondAsync("That menu isn’t for you.", ephemeral: true);
+            return;
+        }
+
+        var chosen = selected.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(chosen))
+        {
+            await RespondAsync("No occurrence selected.", ephemeral: true);
+            return;
+        }
+
+        await RespondWithModalAsync<MoveModal>($"sched-move-modal:{userId}:{chosen}");
+    }
+
+    [ModalInteraction("sched-move-modal:*:*")]
+    public async Task HandleMoveModalAsync(string userId, string originalDate, MoveModal modal)
+    {
+        if (!IsCaller(userId))
+        {
+            await RespondAsync("That modal isn’t for you.", ephemeral: true);
+            return;
+        }
+
+        if (!TryParseDate(originalDate, out var od))
+        {
+            await RespondAsync("Could not parse the selected date.", ephemeral: true);
+            return;
+        }
+
+        if (!TryParseDate(modal.NewDate, out var nd))
+        {
+            await RespondAsync("New date must be `YYYY-MM-DD`.", ephemeral: true);
+            return;
+        }
+
+        TimeOnly t;
+        if (string.IsNullOrWhiteSpace(modal.NewTime))
+        {
+            var s = await _schedule.GetSessionForOriginalDateAsync(od);
+            t = s != null ? TimeOnly.FromDateTime(s.EffectiveStartLocal) : new TimeOnly(18, 30);
+        }
+        else if (!TimeOnly.TryParseExact(modal.NewTime, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out t))
+        {
+            await RespondAsync("Time must be `HH:mm` (24-hour).", ephemeral: true);
+            return;
+        }
+
+        var moved = nd.ToDateTime(t);
+        var existing = await _repo.GetSessionOverrideAsync(od);
+
+        var who = GetCallerName();
+        var newNote = string.IsNullOrWhiteSpace(modal.Note)
+            ? existing?.Note
+            : PrefixNote(who, modal.Note);
+
+        await _repo.UpsertSessionOverrideAsync(new SessionOverrideRow(
+            od,
+            IsCancelled: existing?.IsCancelled ?? false,
+            MovedToLocal: moved,
+            Note: string.IsNullOrWhiteSpace(newNote) ? null : newNote
+        ));
+
+        await RespondAsync($"Moved occurrence **{od:yyyy-MM-dd}** → **{moved:yyyy-MM-dd h:mm tt}**.", ephemeral: true);
+    }
+
+    [ComponentInteraction("sched-clear:*")]
+    public async Task HandleClearSelectionAsync(string userId, string[] selected)
+    {
+        if (!IsCaller(userId))
+        {
+            await RespondAsync("That menu isn’t for you.", ephemeral: true);
+            return;
+        }
+
+        var chosen = selected.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(chosen))
+        {
+            await RespondAsync("No occurrence selected.", ephemeral: true);
+            return;
+        }
+
+        if (!TryParseDate(chosen, out var d))
+        {
+            await RespondAsync("Could not parse the selected date.", ephemeral: true);
+            return;
+        }
+
+        await _repo.DeleteSessionOverrideAsync(d);
+        await RespondAsync($"Cleared override for **{d:yyyy-MM-dd}**.", ephemeral: true);
+    }
+
+    public sealed class CancelModal : IModal
+    {
+        public string Title => "Cancel occurrence";
+
+        [InputLabel("Reason (optional)")]
+        [ModalTextInput("reason", placeholder: "Illness, travel, etc.", maxLength: 200)]
+        public string? Reason { get; set; }
+    }
+
+    public sealed class MoveModal : IModal
+    {
+        public string Title => "Move occurrence";
+
+        [InputLabel("New date (YYYY-MM-DD)")]
+        [ModalTextInput("newDate", placeholder: "2025-06-12")]
+        public string NewDate { get; set; } = string.Empty;
+
+        [InputLabel("New time (HH:mm, optional)")]
+        [ModalTextInput("newTime", placeholder: "18:30", maxLength: 5)]
+        public string? NewTime { get; set; }
+
+        [InputLabel("Note (optional)")]
+        [ModalTextInput("note", placeholder: "Moved because ...", maxLength: 200, style: TextInputStyle.Paragraph)]
+        public string? Note { get; set; }
     }
 
     private string GetCallerName()

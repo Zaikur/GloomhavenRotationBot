@@ -7,6 +7,7 @@ A self-hosted Discord bot + local Web UI for managing a Gloomhaven group:
 - Maintains a **session calendar** (month view) with per-occurrence **cancel/move/note**
 - Sends a **morning announcement** to a configured channel
 - Can **auto-advance** rotations after a session time passes if the session wasn't cancelled.
+- **Chatbot** responds to questions like "are we doing this tonight?" with next session details
 - Designed to run as a container on **TrueNAS SCALE** (or any Docker host)
 
 Everything is stored in a local SQLite database on a mounted volume.
@@ -16,7 +17,25 @@ Everything is stored in a local SQLite database on a mounted volume.
 ## Features
 
 ### Discord Commands (ephemeral / private)
-Commands respond privately (ephemeral), so channels don’t get spammed.
+Commands respond privately (ephemeral), so channels don't get spammed:
+- `/who` - Show who's up next for DM or Food
+- `/skip` - Swap your turn with the next person
+- `/advance` - Manually advance the rotation (DM, Food, or both)
+- `/chatbot` - Pause/resume chatbot auto-responses
+
+### Chatbot Responses
+The bot listens to messages in your guild and automatically responds when someone asks about upcoming sessions. Works with natural language like:
+- "Are we doing this tonight?"
+- "Is Gloomhaven happening today?"
+- "When's the next session?"
+- "Is it cancelled?"
+
+The bot will reply with the next session's date, time, cancellation status, and current DM/Food assignments.
+
+**Control the chatbot:**
+- `/chatbot pause 60` - Pause auto-responses for 60 minutes
+- `/chatbot resume` - Resume immediately
+- `/chatbot status` - Check if paused and time remaining
 
 ### Web UI (LAN only)
 A local web UI for setup and maintenance:
@@ -44,7 +63,9 @@ A local web UI for setup and maintenance:
 
 1. Create an application in the Discord Developer Portal.
 2. Add a **Bot** to the application.
-3. Enable **Server Members Intent** (required so user ID's can be selected in the webUI).
+3. Enable these **Privileged Gateway Intents**:
+   - **Server Members Intent** (required for user ID selection in webUI)
+   - **Message Content Intent** (required for chatbot to read messages)
 4. Invite the bot to your server (guild) with scopes:
    - `applications.commands`
    - `bot`

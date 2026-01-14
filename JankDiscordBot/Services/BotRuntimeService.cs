@@ -9,6 +9,7 @@ public sealed class BotRuntimeService : BackgroundService
 {
     private readonly DiscordSocketClient _client;
     private readonly InteractionHandler _handler;
+    private readonly MessageHandler _messageHandler;
     private readonly AppSettingsService _settings;
     private readonly BotStatusService _status;
     private readonly ILogger<BotRuntimeService> _logger;
@@ -20,12 +21,14 @@ public sealed class BotRuntimeService : BackgroundService
     public BotRuntimeService(
         DiscordSocketClient client,
         InteractionHandler handler,
+        MessageHandler messageHandler,
         AppSettingsService settings,
         BotStatusService status,
         ILogger<BotRuntimeService> logger)
     {
         _client = client;
         _handler = handler;
+        _messageHandler = messageHandler;
         _settings = settings;
         _status = status;
         _logger = logger;
@@ -40,6 +43,7 @@ public sealed class BotRuntimeService : BackgroundService
         };
 
         await _handler.InitializeAsync();
+        await _messageHandler.InitializeAsync();
 
         while (!stoppingToken.IsCancellationRequested)
         {

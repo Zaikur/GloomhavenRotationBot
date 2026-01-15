@@ -73,6 +73,7 @@ A local web UI for setup and maintenance:
    Bot Permissions:
    - `Send Messages`
    - `View Channels`
+   - `Read Message History`
 
 ---
 

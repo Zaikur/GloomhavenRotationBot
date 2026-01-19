@@ -20,7 +20,7 @@ builder.Services.AddRazorPages(options =>
 // Discord services
 builder.Services.AddSingleton(sp => new DiscordSocketClient(new DiscordSocketConfig
 {
-    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMembers,
+    GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMembers | GatewayIntents.GuildMessages | GatewayIntents.MessageContent,
     AlwaysDownloadUsers = true,
     LogGatewayIntentWarnings = true
 }));
@@ -34,12 +34,14 @@ builder.Services.AddSingleton(sp => new InteractionService(
     }));
 
 builder.Services.AddSingleton<InteractionHandler>();
+builder.Services.AddSingleton<MessageHandler>();
 builder.Services.AddSingleton<GuildMemberDirectory>();
 builder.Services.AddSingleton<BotRepository>();
 builder.Services.AddSingleton<AppSettingsService>();
 builder.Services.AddSingleton<BotStatusService>();
 builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<AnnouncementSender>();
+builder.Services.AddSingleton<ChatbotService>();
 builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();

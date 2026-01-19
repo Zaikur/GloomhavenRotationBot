@@ -12,6 +12,17 @@ public sealed class AnnouncementSender
     private readonly AppSettingsService _settings;
     private readonly ScheduleService _schedule;
     private readonly ILogger<AnnouncementSender> _log;
+    private readonly Random _random = new();
+
+    private static readonly string[] BirthdayMessages = new[]
+    {
+        "🎉 **Happy Birthday, {0}!** 🎉\nMay your loot be plentiful and your scenarios mercilessly generous — enjoy your special day! 🎲",
+        "🎂 **It's {0}'s birthday!** 🎂\nTime to celebrate another year of surviving Gloomhaven! Here's to more victories and legendary items! 🏆",
+        "🎈 **Happy Birthday, {0}!** 🎈\nHere's to a day filled with critical hits, no perils, and all the gold you can carry! 🗺️",
+        "🍰 **Cheers to {0} on their birthday!** 🍰\nAnother year, another chance to conquer Gloomhaven. Here's to making it legendary! 💪",
+        "🎪 **Happy Birthday, {0}!** 🎪\nMay your abilities be mighty, your spells accurate, and your adventures unforgettable! 🧙",
+    };
+
 
     public AnnouncementSender(
         DiscordSocketClient client,
@@ -116,11 +127,9 @@ public sealed class AnnouncementSender
 
     private string BuildBirthdayMessage(string displayName, DateOnly localDate)
     {
-        // Gloomhaven themed birthday message
-        return
-            $"🎉 **Happy Birthday, {displayName}!** 🎉\n" +
-            $"May your loot be plentiful and your scenarios mercilessly generous — enjoy your special day!\n" +
-            $"🗓️ **{localDate:dddd, MMM d}** · From all of us at the Gloomhaven table. 🎲";
+        var template = BirthdayMessages[_random.Next(BirthdayMessages.Length)];
+        var message = string.Format(template, displayName);
+        return $"{message}\n🗓️ **{localDate:dddd, MMM d}** · From all of us at the Gloomhaven table.";
     }
 
     private async Task<string> BuildMessageForSessionAsync(SessionInfo s, CancellationToken ct)

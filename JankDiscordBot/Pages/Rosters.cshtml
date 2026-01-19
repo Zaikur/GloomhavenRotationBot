@@ -33,49 +33,7 @@
                                 <span class="me-2">@((i == Model.Dm.Index) ? "➡️" : "")</span>
                                 <strong>@(i + 1).</strong> @name <span class="text-muted small">(<code>@id</code>)</span>
                             </div>
-                            <div class="flex-grow-1 d-flex align-items-center">
-                                <div class="birthday-form">
-                                    <form method="post" asp-page-handler="SetBirthday" class="d-flex align-items-center">
-                                        <input type="hidden" name="UserId" value="@id" />
-                                        <select class="form-select form-select-sm birthday-select" name="Month">
-                                            <option value="">Mon</option>
-                                            @for (int m = 1; m <= 12; m++)
-                                            {
-                                                var monthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m);
-                                                var isSel = Model.Birthdays.TryGetValue(id, out var bd) && bd.Month == m;
-                                                if (isSel)
-                                                {
-                                                    <option value="@m" selected>@monthName</option>
-                                                }
-                                                else
-                                                {
-                                                    <option value="@m">@monthName</option>
-                                                }
-                                            }
-                                        </select>
-                                        <select class="form-select form-select-sm birthday-select" name="Day">
-                                            <option value="">Day</option>
-                                            @for (int d = 1; d <= 31; d++)
-                                            {
-                                                var isSelD = Model.Birthdays.TryGetValue(id, out var bd2) && bd2.Day == d;
-                                                if (isSelD)
-                                                {
-                                                    <option value="@d" selected>@d</option>
-                                                }
-                                                else
-                                                {
-                                                    <option value="@d">@d</option>
-                                                }
-                                            }
-                                        </select>
-                                        <button class="btn btn-sm btn-outline-primary ms-1" type="submit">Save</button>
-                                    </form>
-                                    <form method="post" asp-page-handler="ClearBirthday">
-                                        <input type="hidden" name="UserId" value="@id" />
-                                        <button class="btn btn-sm btn-outline-danger" type="submit">Clear</button>
-                                    </form>
-                                </div>
-                            </div>
+                            <div class="flex-grow-1"></div>
                             <div class="btn-group">
                                 <form method="post" asp-page-handler="Up">
                                     <input type="hidden" name="Role" value="dm" />
@@ -137,49 +95,7 @@
                                 <span class="me-2">@((i == Model.Food.Index) ? "➡️" : "")</span>
                                 <strong>@(i + 1).</strong> @name <span class="text-muted small">(<code>@id</code>)</span>
                             </div>
-                            <div class="flex-grow-1 d-flex align-items-center">
-                                <div class="birthday-form">
-                                    <form method="post" asp-page-handler="SetBirthday" class="d-flex align-items-center">
-                                        <input type="hidden" name="UserId" value="@id" />
-                                        <select class="form-select form-select-sm birthday-select" name="Month">
-                                            <option value="">Mon</option>
-                                            @for (int m = 1; m <= 12; m++)
-                                            {
-                                                var monthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m);
-                                                var isSel = Model.Birthdays.TryGetValue(id, out var bd) && bd.Month == m;
-                                                if (isSel)
-                                                {
-                                                    <option value="@m" selected>@monthName</option>
-                                                }
-                                                else
-                                                {
-                                                    <option value="@m">@monthName</option>
-                                                }
-                                            }
-                                        </select>
-                                        <select class="form-select form-select-sm birthday-select" name="Day">
-                                            <option value="">Day</option>
-                                            @for (int d = 1; d <= 31; d++)
-                                            {
-                                                var isSelD = Model.Birthdays.TryGetValue(id, out var bd2) && bd2.Day == d;
-                                                if (isSelD)
-                                                {
-                                                    <option value="@d" selected>@d</option>
-                                                }
-                                                else
-                                                {
-                                                    <option value="@d">@d</option>
-                                                }
-                                            }
-                                        </select>
-                                        <button class="btn btn-sm btn-outline-primary ms-1" type="submit">Save</button>
-                                    </form>
-                                    <form method="post" asp-page-handler="ClearBirthday">
-                                        <input type="hidden" name="UserId" value="@id" />
-                                        <button class="btn btn-sm btn-outline-danger" type="submit">Clear</button>
-                                    </form>
-                                </div>
-                            </div>
+                            <div class="flex-grow-1"></div>
                             <div class="btn-group ms-auto">
                                 <form method="post" asp-page-handler="Up">
                                     <input type="hidden" name="Role" value="food" />
@@ -225,6 +141,89 @@
                     </div>
                 </form>
 
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">🎂 Birthdays</h5>
+
+                @if (Model.GuildMembers.Count == 0)
+                {
+                    <p class="text-muted small">No guild members loaded.</p>
+                }
+                else
+                {
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Member</th>
+                                <th>Month</th>
+                                <th>Day</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var member in Model.GuildMembers)
+                            {
+                                var hasBday = Model.Birthdays.TryGetValue(member.Id, out var bday);
+                                <tr>
+                                    <td><strong>@member.Name</strong></td>
+                                    <form method="post" asp-page-handler="SetBirthday" class="d-contents">
+                                        <input type="hidden" name="UserId" value="@member.Id" />
+                                        <td>
+                                            <select class="form-select form-select-sm" name="Month" style="width:100px;">
+                                                <option value="">Month</option>
+                                                @for (int m = 1; m <= 12; m++)
+                                                {
+                                                    var monthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m);
+                                                    var isSel = hasBday && bday.Month == m;
+                                                    if (isSel)
+                                                    {
+                                                        <option value="@m" selected>@monthName</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@m">@monthName</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm" name="Day" style="width:80px;">
+                                                <option value="">Day</option>
+                                                @for (int d = 1; d <= 31; d++)
+                                                {
+                                                    var isSelD = hasBday && bday.Day == d;
+                                                    if (isSelD)
+                                                    {
+                                                        <option value="@d" selected>@d</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@d">@d</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" type="submit">Save</button>
+                                            @if (hasBday)
+                                            {
+                                                <form method="post" asp-page-handler="ClearBirthday" class="d-inline ms-2">
+                                                    <input type="hidden" name="UserId" value="@member.Id" />
+                                                    <button class="btn btn-sm btn-outline-danger" type="submit">Clear</button>
+                                                </form>
+                                            }
+                                        </td>
+                                    </form>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
             </div>
         </div>
     </div>

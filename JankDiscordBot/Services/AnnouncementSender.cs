@@ -95,6 +95,34 @@ public sealed class AnnouncementSender
             : $"Sent {sent} morning announcement(s).");
     }
 
+    public async Task<(bool Ok, string Message)> SendBirthdayAsync(ulong userId, string displayName, DateOnly localDate, bool dryRun = false, CancellationToken ct = default)
+    {
+        var (channelId, _, _) = await _settings.GetAnnouncementConfigAsync();
+        if (channelId == 0)
+            return (false, "Announcement channel is not set.");
+
+        if (_client.ConnectionState != ConnectionState.Connected)
+            return (false, "Discord client is not connected yet (token/guild not ready).");
+
+        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        if (channel == null)
+            return (false, "Announcement channel could not be found (check Channel ID).");
+
+        var message = BuildBirthdayMessage(displayName, localDate);
+        await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
+
+        return (true, "Sent birthday message.");
+    }
+
+    private string BuildBirthdayMessage(string displayName, DateOnly localDate)
+    {
+        // Gloomhaven themed birthday message
+        return
+            $"🎉 **Happy Birthday, {displayName}!** 🎉\n" +
+            $"May your loot be plentiful and your scenarios mercilessly generous — enjoy your special day!\n" +
+            $"🗓️ **{localDate:dddd, MMM d}** · From all of us at the Gloomhaven table. 🎲";
+    }
+
     private async Task<string> BuildMessageForSessionAsync(SessionInfo s, CancellationToken ct)
     {
         // CANCELLED

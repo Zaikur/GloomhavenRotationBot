@@ -74,6 +74,13 @@ public sealed class BotRepository
               Note TEXT NULL,
               UpdatedUtc TEXT NOT NULL
             );
+            
+                        CREATE TABLE IF NOT EXISTS Birthdays (
+                            UserId TEXT PRIMARY KEY,
+                            Month INTEGER NOT NULL,
+                            Day INTEGER NOT NULL,
+                            LastSentYear INTEGER NULL
+                        );
             ";
         cmd.ExecuteNonQuery();
 
@@ -353,6 +360,71 @@ public sealed class BotRepository
             r.GetInt32(3) == 1,
             advancedUtc
         );
+    }
+
+    // Birthdays
+    public async Task UpsertBirthdayAsync(ulong userId, int month, int day)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO Birthdays (UserId, Month, Day, LastSentYear)
+            VALUES (@id, @m, @d, NULL)
+            ON CONFLICT(UserId) DO UPDATE SET
+              Month = excluded.Month,
+              Day = excluded.Day;";
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+        cmd.Parameters.AddWithValue("@m", month);
+        cmd.Parameters.AddWithValue("@d", day);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteBirthdayAsync(ulong userId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "DELETE FROM Birthdays WHERE UserId = @id";
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<List<(ulong UserId, int Month, int Day, int? LastSentYear)>> GetAllBirthdaysAsync()
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "SELECT UserId, Month, Day, LastSentYear FROM Birthdays";
+
+        var list = new List<(ulong, int, int, int?)>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            var id = ulong.Parse(r.GetString(0));
+            var m = r.GetInt32(1);
+            var d = r.GetInt32(2);
+            int? last = r.IsDBNull(3) ? null : r.GetInt32(3);
+            list.Add((id, m, d, last));
+        }
+
+        return list;
+    }
+
+    public async Task SetBirthdaySentYearAsync(ulong userId, int year)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE Birthdays SET LastSentYear = @y WHERE UserId = @id";
+        cmd.Parameters.AddWithValue("@y", year);
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public async Task SetAnnouncedAsync(string occurrenceId, DateTime utcNow)

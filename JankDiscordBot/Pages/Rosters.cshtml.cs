@@ -19,6 +19,7 @@ public class RostersModel : PageModel
 
     public List<(ulong Id, string Name)> GuildMembers { get; private set; } = new();
     public string? Warning { get; private set; }
+    public Dictionary<ulong, (int Month, int Day)> Birthdays { get; private set; } = new();
 
     private Dictionary<ulong, string> _nameById = new();
     public string NameFor(ulong id) => _nameById.TryGetValue(id, out var n) ? n : $"Unknown ({id})";
@@ -30,6 +31,9 @@ public class RostersModel : PageModel
 
         GuildMembers = await _members.GetMembersAsync();
         _nameById = GuildMembers.ToDictionary(x => x.Id, x => x.Name);
+
+        var b = await _repo.GetAllBirthdaysAsync();
+        Birthdays = b.ToDictionary(x => x.UserId, x => (x.Month, x.Day));
 
         if (GuildMembers.Count == 0)
             Warning = "No guild members loaded. Make sure the bot is connected, GuildId is correct, and Server Members Intent is enabled.";
@@ -47,6 +51,26 @@ public class RostersModel : PageModel
             state.Members.Add(id);
 
         await _repo.SaveRotationAsync(r, state);
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostSetBirthdayAsync(string userId, int? Month, int? Day)
+    {
+        if (!ulong.TryParse(userId, out var id) || id == 0) return RedirectToPage();
+        if (Month == null || Day == null) return RedirectToPage();
+
+        // basic validation: clamp day for month
+        var month = Math.Clamp(Month.Value, 1, 12);
+        var day = Math.Clamp(Day.Value, 1, 31);
+
+        await _repo.UpsertBirthdayAsync(id, month, day);
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostClearBirthdayAsync(string userId)
+    {
+        if (!ulong.TryParse(userId, out var id) || id == 0) return RedirectToPage();
+        await _repo.DeleteBirthdayAsync(id);
         return RedirectToPage();
     }
 

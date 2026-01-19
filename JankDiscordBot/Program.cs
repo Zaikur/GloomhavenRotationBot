@@ -43,6 +43,7 @@ builder.Services.AddSingleton<AnnouncementSender>();
 builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();
+builder.Services.AddHostedService<BirthdayService>();
 
 var app = builder.Build();
 

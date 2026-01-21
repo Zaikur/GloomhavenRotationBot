@@ -49,6 +49,10 @@ public sealed class MessageHandler
             var content = msg.Content?.Trim();
             if (string.IsNullOrWhiteSpace(content)) return;
 
+            // Only respond when the bot is explicitly mentioned
+            var botMentioned = msg.MentionedUsers.Any(u => u.Id == _client.CurrentUser.Id);
+            if (!botMentioned) return;
+
             // Don't respond if chatbot is paused
             if (_chatbot.IsPaused()) return;
 
@@ -141,6 +145,11 @@ public sealed class MessageHandler
                 }
                 return;
             }
+
+            // Fallback when the bot is mentioned but the message is not understood
+            var fallback = _chatbot.GetFallbackResponse();
+            await msg.Channel.SendMessageAsync(fallback);
+            _logger.LogInformation("Sent fallback response to {User}: {Message}", msg.Author.Username, content);
         }
         catch (Exception ex)
         {

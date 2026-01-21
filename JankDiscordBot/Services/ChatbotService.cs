@@ -493,6 +493,14 @@ public sealed class ChatbotService
         return $"✅ The session {timePhrase} at **{upcoming.EffectiveStartLocal:h:mm tt}** is **not cancelled** and is going ahead as planned!";
     }
 
+    /// <summary>
+    /// Provides a generic response when the chatbot cannot match a request.
+    /// </summary>
+    public string GetFallbackResponse()
+    {
+        return "I'm not sure what you mean. Try asking about the next session, who is DM, or who is bringing food.";
+    }
+
     private string FormatSessionTime(SessionInfo upcoming, DateTime nowLocal)
     {
         var dayDiff = DateOnly.FromDateTime(upcoming.EffectiveStartLocal).DayNumber - DateOnly.FromDateTime(nowLocal).DayNumber;

@@ -23,6 +23,15 @@ public class SetupModel : PageModel
     [BindProperty] public string AnnounceTime { get; set; } = "09:00"; // "HH:mm"
     [BindProperty] public int AutoAdvanceMinutesAfterStart { get; set; } = 60;
 
+    [BindProperty] public string AiProvider { get; set; } = ""; // openai | ollama | custom
+    [BindProperty] public string AiEndpoint { get; set; } = "";
+    [BindProperty] public string AiModel { get; set; } = "";
+    [BindProperty] public string? AiApiKey { get; set; }
+
+    [BindProperty] public double? WeatherLatitude { get; set; }
+    [BindProperty] public double? WeatherLongitude { get; set; }
+    [BindProperty] public string WeatherUnits { get; set; } = "imperial";
+
 
     public bool HasToken { get; private set; }
     public string? Message { get; set; }
@@ -40,6 +49,17 @@ public class SetupModel : PageModel
         AnnounceTime = $"{h:D2}:{m:D2}";
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
+
+        var (provider, endpoint, model, apiKey) = await _settings.GetAiConfigAsync();
+        AiProvider = provider;
+        AiEndpoint = endpoint;
+        AiModel = model;
+        AiApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : ""; // never echo; blank means stored
+
+        var (lat, lon, units) = await _settings.GetWeatherConfigAsync();
+        WeatherLatitude = lat;
+        WeatherLongitude = lon;
+        WeatherUnits = units;
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -73,6 +93,8 @@ public class SetupModel : PageModel
         await _settings.SaveDiscordConfigAsync(Token, gid, RegisterToGuild);
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
+        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey);
+        await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
         Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";
@@ -172,7 +194,7 @@ public class SetupModel : PageModel
         catch (Discord.Net.HttpException hex)
         {
             MessageKind = "danger";
-            Message = $"Discord API error: {hex.HttpCode} — {hex.Message}";
+            Message = $"Discord API error: {hex.HttpCode} ï¿½ {hex.Message}";
         }
         catch (Exception ex)
         {
@@ -185,6 +207,20 @@ public class SetupModel : PageModel
             await ReloadTokenFlagAsync();
         }
 
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostSaveAiAsync()
+    {
+        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey);
+        await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
+
+        Message = "AI and weather settings saved.";
+        MessageKind = "success";
+
+        AiApiKey = null;
+        await ReloadTokenFlagAsync();
+        await OnGetAsync();
         return Page();
     }
 

@@ -17,6 +17,14 @@ public sealed class AppSettingsService
     private const string DiscordGuildKey = "discord.guildId";
     private const string DiscordRegKey = "discord.registerToGuild";
 
+    private const string KeyAiProvider = "AI.Provider";          // openai | ollama | custom
+    private const string KeyAiEndpoint = "AI.Endpoint";          // URL to chat completions API
+    private const string KeyAiModel = "AI.Model";                // model name
+    private const string KeyAiApiKey = "AI.ApiKey";              // optional
+    private const string KeyWeatherLat = "Weather.Latitude";
+    private const string KeyWeatherLon = "Weather.Longitude";
+    private const string KeyWeatherUnits = "Weather.Units";      // imperial | metric
+
 
     public AppSettingsService(BotRepository repo, IDataProtectionProvider dp, ILogger<AppSettingsService> log)
     {
@@ -159,5 +167,54 @@ public sealed class AppSettingsService
     {
         var (token, guildId, _) = await GetDiscordConfigAsync();
         return !string.IsNullOrWhiteSpace(token) && guildId > 0;
+    }
+
+    public async Task<(string Provider, string Endpoint, string Model, string ApiKey)> GetAiConfigAsync()
+    {
+        var provider = (await _repo.GetSettingAsync(KeyAiProvider)) ?? "";
+        var endpoint = (await _repo.GetSettingAsync(KeyAiEndpoint)) ?? "";
+        var model = (await _repo.GetSettingAsync(KeyAiModel)) ?? "";
+        var apiKey = (await _repo.GetSettingAsync(KeyAiApiKey)) ?? "";
+        return (provider, endpoint, model, apiKey);
+    }
+
+    public async Task SaveAiConfigAsync(string provider, string endpoint, string model, string? apiKey)
+    {
+        provider = string.IsNullOrWhiteSpace(provider) ? "" : provider.Trim();
+        endpoint = string.IsNullOrWhiteSpace(endpoint) ? "" : endpoint.Trim();
+        model = string.IsNullOrWhiteSpace(model) ? "" : model.Trim();
+
+        await _repo.UpsertSettingAsync(KeyAiProvider, provider);
+        await _repo.UpsertSettingAsync(KeyAiEndpoint, endpoint);
+        await _repo.UpsertSettingAsync(KeyAiModel, model);
+
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            await _repo.UpsertSettingAsync(KeyAiApiKey, apiKey.Trim());
+    }
+
+    public async Task<(double? Latitude, double? Longitude, string Units)> GetWeatherConfigAsync()
+    {
+        double? lat = null;
+        double? lon = null;
+
+        var latStr = await _repo.GetSettingAsync(KeyWeatherLat);
+        if (double.TryParse(latStr, out var dlat)) lat = dlat;
+
+        var lonStr = await _repo.GetSettingAsync(KeyWeatherLon);
+        if (double.TryParse(lonStr, out var dlon)) lon = dlon;
+
+        var units = (await _repo.GetSettingAsync(KeyWeatherUnits)) ?? "imperial";
+        units = units.Equals("metric", StringComparison.OrdinalIgnoreCase) ? "metric" : "imperial";
+
+        return (lat, lon, units);
+    }
+
+    public async Task SaveWeatherConfigAsync(double? latitude, double? longitude, string units)
+    {
+        var unitsNorm = units.Equals("metric", StringComparison.OrdinalIgnoreCase) ? "metric" : "imperial";
+
+        await _repo.UpsertSettingAsync(KeyWeatherUnits, unitsNorm);
+        await _repo.UpsertSettingAsync(KeyWeatherLat, latitude?.ToString() ?? "");
+        await _repo.UpsertSettingAsync(KeyWeatherLon, longitude?.ToString() ?? "");
     }
 }

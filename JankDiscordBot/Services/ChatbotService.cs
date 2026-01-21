@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using GloomhavenRotationBot.Data;
 
@@ -10,12 +12,16 @@ public sealed class ChatbotService
 {
     private readonly ScheduleService _schedule;
     private readonly BotRepository _repo;
+    private readonly AiTextService _ai;
+    private readonly WeatherService _weather;
     private DateTime? _pausedUntilUtc;
 
-    public ChatbotService(ScheduleService schedule, BotRepository repo)
+    public ChatbotService(ScheduleService schedule, BotRepository repo, AiTextService ai, WeatherService weather)
     {
         _schedule = schedule;
         _repo = repo;
+        _ai = ai;
+        _weather = weather;
     }
 
     /// <summary>
@@ -56,6 +62,78 @@ public sealed class ChatbotService
         if (_pausedUntilUtc == null) return null;
         var remaining = _pausedUntilUtc.Value - DateTime.UtcNow;
         return remaining > TimeSpan.Zero ? remaining : null;
+    }
+
+    /// <summary>
+    /// Builds a context-rich prompt and delegates to the AI model for responses.
+    /// </summary>
+    public async Task<string> GenerateResponseAsync(string userMessage, ulong userId, string? username)
+    {
+        var nowLocal = await _schedule.LocalNowAsync();
+        var nextSession = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+
+        var dmRotation = await _repo.GetRotationAsync(RotationRole.DM);
+        var foodRotation = await _repo.GetRotationAsync(RotationRole.Food);
+
+        var profile = await _repo.GetMemberProfileAsync(userId);
+
+        var dmCurrent = dmRotation.Members.Count > 0 ? dmRotation.Members[dmRotation.Index % dmRotation.Members.Count] : (ulong?)null;
+        var foodCurrent = foodRotation.Members.Count > 0 ? foodRotation.Members[foodRotation.Index % foodRotation.Members.Count] : (ulong?)null;
+
+        string MentionOrPlaceholder(ulong? id) => id.HasValue ? $"<@{id.Value}>" : "_not set_";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("User message:");
+        sb.AppendLine(userMessage.Trim());
+        sb.AppendLine();
+
+        if (nextSession == null)
+        {
+            sb.AppendLine("No upcoming sessions were found.");
+        }
+        else
+        {
+            sb.AppendLine($"Next session: {nextSession.EffectiveStartLocal:dddd, MMM d @ h:mm tt} local time.");
+            if (nextSession.IsCancelled)
+                sb.AppendLine("Status: CANCELLED.");
+            else
+                sb.AppendLine("Status: Scheduled.");
+
+            if (!string.IsNullOrWhiteSpace(nextSession.Note))
+                sb.AppendLine($"Session note: {nextSession.Note.Trim()}");
+
+            var wx = await _weather.GetDailyForecastSummaryAsync(DateOnly.FromDateTime(nextSession.EffectiveStartLocal));
+            if (!string.IsNullOrWhiteSpace(wx))
+                sb.AppendLine(wx);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Rotations:");
+        sb.AppendLine($"DM rotation (current first): {BuildRotationLine(dmRotation)}");
+        sb.AppendLine($"Food rotation (current first): {BuildRotationLine(foodRotation)}");
+        sb.AppendLine($"Current DM: {MentionOrPlaceholder(dmCurrent)}");
+        sb.AppendLine($"Current food: {MentionOrPlaceholder(foodCurrent)}");
+
+        if (!string.IsNullOrWhiteSpace(username))
+            sb.AppendLine($"Requesting user: {username} ({userId})");
+        else
+            sb.AppendLine($"Requesting user id: {userId}");
+
+        if (profile != null)
+        {
+            sb.AppendLine("User profile:");
+            if (!string.IsNullOrWhiteSpace(profile.CharacterName))
+                sb.AppendLine($"Character: {profile.CharacterName}");
+            if (!string.IsNullOrWhiteSpace(profile.Notes))
+                sb.AppendLine($"Notes: {profile.Notes}");
+            if (profile.BirthdayMonth is not null && profile.BirthdayDay is not null)
+                sb.AppendLine($"Birthday: {profile.BirthdayMonth}/{profile.BirthdayDay}");
+        }
+
+        var system = "You are a concise, helpful Discord bot for a private Gloomhaven group. Answer using the provided facts. Keep replies under 4 short sentences. Use the provided Discord mention strings exactly as-is. If no session exists, say so. If a session is cancelled, make that clear. If you do not know the answer, say so politely. If the user message is unrelated to Gloomhaven/scheduling, pivot to a witty, sarcastic, slightly cruel jab personalized with any profile details given (character, notes). Never invent members; only use provided info.";
+
+        var fallback = GetFallbackResponse();
+        return await _ai.GenerateAsync(system, sb.ToString(), fallback, temperature: 0.35f, maxTokens: 200);
     }
 
     /// <summary>
@@ -511,5 +589,15 @@ public sealed class ChatbotService
             _ when dayDiff < 7 => $"**this {upcoming.EffectiveStartLocal:dddd}**",
             _ => $"on **{upcoming.EffectiveStartLocal:dddd, MMM d}**"
         };
+    }
+
+    private static string BuildRotationLine(RotationState rotation)
+    {
+        if (rotation.Members.Count == 0) return "_not set_";
+
+        var idx = rotation.Index % rotation.Members.Count;
+        var ordered = rotation.Members.Skip(idx).Concat(rotation.Members.Take(idx));
+        return string.Join(", ", ordered.Select(id => $"<@{id}>")
+            .DefaultIfEmpty("_not set_"));
     }
 }

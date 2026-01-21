@@ -1,0 +1,94 @@
+@page
+@model MembersModel
+
+@if (!string.IsNullOrWhiteSpace(Model.Warning))
+{
+    <div class="alert alert-warning">@Model.Warning</div>
+}
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h4 class="mb-2">Member Profiles</h4>
+        <div class="text-white-50 small mb-3">Track characters, birthdays, and notes for each member. These details feed the bot's replies.</div>
+
+        @if (Model.Rows.Count == 0)
+        {
+            <p class="text-muted">No guild members loaded. Connect the bot and refresh.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th style="min-width:160px;">Member</th>
+                            <th style="min-width:150px;">Character</th>
+                            <th style="min-width:140px;">Birthday</th>
+                            <th style="min-width:220px;">Notes</th>
+                            <th style="width:120px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in Model.Rows)
+                        {
+                            <tr>
+                                <form method="post" asp-page-handler="Save" class="d-contents">
+                                    <input type="hidden" name="UserId" value="@row.UserId" />
+                                    <td>
+                                        <strong>@row.Name</strong>
+                                        <div class="text-white-50 small">@row.UserId</div>
+                                    </td>
+                                    <td>
+                                        <input class="form-control form-control-sm" name="CharacterName" value="@row.CharacterName" placeholder="Character name" />
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-1">
+                                            <select class="form-select form-select-sm" name="BirthdayMonth" style="max-width:120px;">
+                                                <option value="">Month</option>
+                                                @for (int m = 1; m <= 12; m++)
+                                                {
+                                                    var monthName = System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m);
+                                                    if (row.BirthdayMonth == m)
+                                                    {
+                                                        <option value="@m" selected>@monthName</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@m">@monthName</option>
+                                                    }
+                                                }
+                                            </select>
+                                            <select class="form-select form-select-sm" name="BirthdayDay" style="max-width:90px;">
+                                                <option value="">Day</option>
+                                                @for (int d = 1; d <= 31; d++)
+                                                {
+                                                    if (row.BirthdayDay == d)
+                                                    {
+                                                        <option value="@d" selected>@d</option>
+                                                    }
+                                                    else
+                                                    {
+                                                        <option value="@d">@d</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <textarea class="form-control form-control-sm" name="Notes" rows="2" placeholder="Allergies, roleplay cues, snark ammo">@row.Notes</textarea>
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="d-flex flex-column gap-1">
+                                            <button class="btn btn-sm btn-primary" type="submit">Save</button>
+                                            <button class="btn btn-sm btn-outline-secondary" type="submit" formaction="?handler=Clear" formmethod="post">Clear</button>
+                                        </div>
+                                    </td>
+                                </form>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>

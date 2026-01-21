@@ -29,7 +29,7 @@
             <div class="alert alert-@Model.MessageKind mb-3">@Model.Message</div>
         }
 
-        <form method="post" asp-antiforgery="false" class="row g-3">
+        <form method="post" asp-antiforgery="false" class="row g-3" asp-page-handler="SaveAi">
             <div class="col-12">
                 <label class="form-label">Guild ID</label>
                 <input class="form-control" name="GuildId" value="@Model.GuildId" />
@@ -99,6 +99,71 @@
                 </button>
 
                 <a class="btn btn-outline-secondary" href="/Rosters">Rosters</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <h5 class="mb-1">AI responses</h5>
+        <div class="text-white-50 small mb-3">Configure how the bot generates replies, announcements, and birthday wishes.</div>
+
+        <form method="post" asp-antiforgery="false" class="row g-3">
+            <div class="col-12 col-md-6">
+                <label class="form-label">Provider</label>
+                <select class="form-select" asp-for="AiProvider">
+                    <option value="">Default (OpenAI-compatible)</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="ollama">Ollama (local)</option>
+                    <option value="custom">Custom</option>
+                </select>
+                <div class="form-text text-white-50">Choose Ollama for local models (e.g., http://localhost:11434/v1/chat/completions).</div>
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Endpoint URL</label>
+                <input class="form-control" name="AiEndpoint" value="@Model.AiEndpoint" placeholder="https://api.openai.com/v1/chat/completions" />
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Model name</label>
+                <input class="form-control" name="AiModel" value="@Model.AiModel" placeholder="gpt-3.5-turbo or llama3" />
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">API key (optional)</label>
+                <input class="form-control" name="AiApiKey" type="password" value="" placeholder="Leave blank to keep existing" />
+                <div class="form-text text-white-50">For Ollama/local models, leave blank.</div>
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">Save AI settings</button>
+            </div>
+
+        <hr class="border-secondary" />
+
+        <h6 class="mt-2 mb-1">Weather (for announcements and replies)</h6>
+        <div class="text-white-50 small mb-3">Optional: provide coordinates to let the bot mention the daily forecast.</div>
+
+            <div class="col-12 col-md-4">
+                <label class="form-label">Latitude</label>
+                <input class="form-control" name="WeatherLatitude" value="@Model.WeatherLatitude" placeholder="41.8781" />
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">Longitude</label>
+                <input class="form-control" name="WeatherLongitude" value="@Model.WeatherLongitude" placeholder="-87.6298" />
+            </div>
+            <div class="col-12 col-md-4">
+                <label class="form-label">Units</label>
+                <select class="form-select" asp-for="WeatherUnits">
+                    <option value="imperial">Imperial (F)</option>
+                    <option value="metric">Metric (C)</option>
+                </select>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">Save weather settings</button>
+                <div class="text-white-50 small">Uses open-meteo.com (no API key required). Leave blank to disable.</div>
             </div>
         </form>
     </div>

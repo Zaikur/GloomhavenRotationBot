@@ -74,13 +74,22 @@ public sealed class BotRepository
               Note TEXT NULL,
               UpdatedUtc TEXT NOT NULL
             );
-            
-                        CREATE TABLE IF NOT EXISTS Birthdays (
-                            UserId TEXT PRIMARY KEY,
-                            Month INTEGER NOT NULL,
-                            Day INTEGER NOT NULL,
-                            LastSentYear INTEGER NULL
-                        );
+
+            CREATE TABLE IF NOT EXISTS Birthdays (
+                UserId TEXT PRIMARY KEY,
+                Month INTEGER NOT NULL,
+                Day INTEGER NOT NULL,
+                LastSentYear INTEGER NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS MemberProfiles (
+                UserId TEXT PRIMARY KEY,
+                CharacterName TEXT NULL,
+                Notes TEXT NULL,
+                BirthdayMonth INTEGER NULL,
+                BirthdayDay INTEGER NULL,
+                BirthdayLastSentYear INTEGER NULL
+            );
             ";
         cmd.ExecuteNonQuery();
 
@@ -99,6 +108,30 @@ public sealed class BotRepository
                 ins.Parameters.AddWithValue("@r", role);
                 ins.Parameters.AddWithValue("@j", JsonSerializer.Serialize(empty, JsonOpts));
                 ins.ExecuteNonQuery();
+            }
+        }
+
+        // Migrate birthdays into member profiles if profiles are empty
+        using (var checkProfiles = con.CreateCommand())
+        {
+            checkProfiles.CommandText = "SELECT COUNT(1) FROM MemberProfiles";
+            var profileCount = Convert.ToInt32(checkProfiles.ExecuteScalar());
+
+            if (profileCount == 0)
+            {
+                using var checkBirthdays = con.CreateCommand();
+                checkBirthdays.CommandText = "SELECT COUNT(1) FROM Birthdays";
+                var birthdayCount = Convert.ToInt32(checkBirthdays.ExecuteScalar());
+
+                if (birthdayCount > 0)
+                {
+                    using var migrate = con.CreateCommand();
+                    migrate.CommandText = @"
+                        INSERT INTO MemberProfiles (UserId, BirthdayMonth, BirthdayDay, BirthdayLastSentYear)
+                        SELECT UserId, Month, Day, LastSentYear FROM Birthdays;
+                    ";
+                    migrate.ExecuteNonQuery();
+                }
             }
         }
     }
@@ -362,8 +395,165 @@ public sealed class BotRepository
         );
     }
 
-    // Birthdays
+    // Member Profiles / Birthdays
+    public async Task<List<MemberProfile>> GetAllMemberProfilesAsync()
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "SELECT UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear FROM MemberProfiles";
+
+        var list = new List<MemberProfile>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new MemberProfile
+            {
+                UserId = ulong.Parse(r.GetString(0)),
+                CharacterName = r.IsDBNull(1) ? null : r.GetString(1),
+                Notes = r.IsDBNull(2) ? null : r.GetString(2),
+                BirthdayMonth = r.IsDBNull(3) ? null : r.GetInt32(3),
+                BirthdayDay = r.IsDBNull(4) ? null : r.GetInt32(4),
+                BirthdayLastSentYear = r.IsDBNull(5) ? null : r.GetInt32(5)
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<MemberProfile?> GetMemberProfileAsync(ulong userId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "SELECT UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear FROM MemberProfiles WHERE UserId = @id";
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+
+        return new MemberProfile
+        {
+            UserId = ulong.Parse(r.GetString(0)),
+            CharacterName = r.IsDBNull(1) ? null : r.GetString(1),
+            Notes = r.IsDBNull(2) ? null : r.GetString(2),
+            BirthdayMonth = r.IsDBNull(3) ? null : r.GetInt32(3),
+            BirthdayDay = r.IsDBNull(4) ? null : r.GetInt32(4),
+            BirthdayLastSentYear = r.IsDBNull(5) ? null : r.GetInt32(5)
+        };
+    }
+
+    public async Task UpsertMemberProfileAsync(MemberProfile profile, bool syncLegacyBirthdays = true)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO MemberProfiles (UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear)
+            VALUES (@id, @c, @n, @bm, @bd, @bly)
+            ON CONFLICT(UserId) DO UPDATE SET
+              CharacterName = excluded.CharacterName,
+              Notes = excluded.Notes,
+              BirthdayMonth = excluded.BirthdayMonth,
+              BirthdayDay = excluded.BirthdayDay,
+              BirthdayLastSentYear = excluded.BirthdayLastSentYear;";
+        cmd.Parameters.AddWithValue("@id", profile.UserId.ToString());
+        cmd.Parameters.AddWithValue("@c", (object?)profile.CharacterName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@n", (object?)profile.Notes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@bm", (object?)profile.BirthdayMonth ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@bd", (object?)profile.BirthdayDay ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@bly", (object?)profile.BirthdayLastSentYear ?? DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync();
+
+        if (syncLegacyBirthdays)
+        {
+            if (profile.BirthdayMonth.HasValue && profile.BirthdayDay.HasValue)
+            {
+                await UpsertBirthdayLegacyAsync(profile.UserId, profile.BirthdayMonth.Value, profile.BirthdayDay.Value);
+                if (profile.BirthdayLastSentYear.HasValue)
+                    await SetBirthdaySentYearLegacyAsync(profile.UserId, profile.BirthdayLastSentYear.Value);
+            }
+            else
+            {
+                await DeleteBirthdayLegacyAsync(profile.UserId);
+            }
+        }
+    }
+
+    public async Task DeleteMemberProfileAsync(ulong userId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "DELETE FROM MemberProfiles WHERE UserId = @id";
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+        await cmd.ExecuteNonQueryAsync();
+
+        await DeleteBirthdayAsync(userId);
+    }
+
+    // Legacy birthday helpers (kept for compatibility with existing callers)
     public async Task UpsertBirthdayAsync(ulong userId, int month, int day)
+    {
+        await UpsertBirthdayLegacyAsync(userId, month, day);
+
+        // mirror into member profiles without re-syncing legacy tables
+        var existing = await GetMemberProfileAsync(userId) ?? new MemberProfile { UserId = userId };
+        existing.BirthdayMonth = month;
+        existing.BirthdayDay = day;
+        await UpsertMemberProfileAsync(existing, syncLegacyBirthdays: false);
+    }
+
+    public async Task DeleteBirthdayAsync(ulong userId)
+    {
+        await DeleteBirthdayLegacyAsync(userId);
+
+        var existing = await GetMemberProfileAsync(userId);
+        if (existing != null)
+        {
+            existing.BirthdayMonth = null;
+            existing.BirthdayDay = null;
+            existing.BirthdayLastSentYear = null;
+            await UpsertMemberProfileAsync(existing, syncLegacyBirthdays: false);
+        }
+    }
+
+    public async Task<List<(ulong UserId, int Month, int Day, int? LastSentYear)>> GetAllBirthdaysAsync()
+    {
+        var profiles = await GetAllMemberProfilesAsync();
+        return profiles
+            .Where(p => p.BirthdayMonth.HasValue && p.BirthdayDay.HasValue)
+            .Select(p => (p.UserId, p.BirthdayMonth!.Value, p.BirthdayDay!.Value, p.BirthdayLastSentYear))
+            .ToList();
+    }
+
+    public async Task SetBirthdaySentYearAsync(ulong userId, int year)
+    {
+        // Update member profile
+        var profile = await GetMemberProfileAsync(userId) ?? new MemberProfile { UserId = userId };
+        profile.BirthdayLastSentYear = year;
+        await UpsertMemberProfileAsync(profile);
+        await SetBirthdaySentYearLegacyAsync(userId, year);
+    }
+
+    private async Task SetBirthdaySentYearLegacyAsync(ulong userId, int year)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "UPDATE Birthdays SET LastSentYear = @y WHERE UserId = @id";
+        cmd.Parameters.AddWithValue("@y", year);
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task UpsertBirthdayLegacyAsync(ulong userId, int month, int day)
     {
         await using var con = Open();
         await con.OpenAsync();
@@ -382,47 +572,13 @@ public sealed class BotRepository
         await cmd.ExecuteNonQueryAsync();
     }
 
-    public async Task DeleteBirthdayAsync(ulong userId)
+    private async Task DeleteBirthdayLegacyAsync(ulong userId)
     {
         await using var con = Open();
         await con.OpenAsync();
 
         await using var cmd = con.CreateCommand();
         cmd.CommandText = "DELETE FROM Birthdays WHERE UserId = @id";
-        cmd.Parameters.AddWithValue("@id", userId.ToString());
-        await cmd.ExecuteNonQueryAsync();
-    }
-
-    public async Task<List<(ulong UserId, int Month, int Day, int? LastSentYear)>> GetAllBirthdaysAsync()
-    {
-        await using var con = Open();
-        await con.OpenAsync();
-
-        await using var cmd = con.CreateCommand();
-        cmd.CommandText = "SELECT UserId, Month, Day, LastSentYear FROM Birthdays";
-
-        var list = new List<(ulong, int, int, int?)>();
-        await using var r = await cmd.ExecuteReaderAsync();
-        while (await r.ReadAsync())
-        {
-            var id = ulong.Parse(r.GetString(0));
-            var m = r.GetInt32(1);
-            var d = r.GetInt32(2);
-            int? last = r.IsDBNull(3) ? null : r.GetInt32(3);
-            list.Add((id, m, d, last));
-        }
-
-        return list;
-    }
-
-    public async Task SetBirthdaySentYearAsync(ulong userId, int year)
-    {
-        await using var con = Open();
-        await con.OpenAsync();
-
-        await using var cmd = con.CreateCommand();
-        cmd.CommandText = "UPDATE Birthdays SET LastSentYear = @y WHERE UserId = @id";
-        cmd.Parameters.AddWithValue("@y", year);
         cmd.Parameters.AddWithValue("@id", userId.ToString());
         await cmd.ExecuteNonQueryAsync();
     }

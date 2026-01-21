@@ -1,4 +1,5 @@
-﻿using Discord;
+﻿using System.Text;
+using Discord;
 using Discord.WebSocket;
 using GloomhavenRotationBot.Data;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,8 @@ public sealed class AnnouncementSender
     private readonly BotRepository _repo;
     private readonly AppSettingsService _settings;
     private readonly ScheduleService _schedule;
+    private readonly AiTextService _ai;
+    private readonly WeatherService _weather;
     private readonly ILogger<AnnouncementSender> _log;
     private readonly Random _random = new();
 
@@ -29,12 +32,16 @@ public sealed class AnnouncementSender
         BotRepository repo,
         AppSettingsService settings,
         ScheduleService schedule,
+        AiTextService ai,
+        WeatherService weather,
         ILogger<AnnouncementSender> log)
     {
         _client = client;
         _repo = repo;
         _settings = settings;
         _schedule = schedule;
+        _ai = ai;
+        _weather = weather;
         _log = log;
     }
 
@@ -119,36 +126,27 @@ public sealed class AnnouncementSender
         if (channel == null)
             return (false, "Announcement channel could not be found (check Channel ID).");
 
-        var message = BuildBirthdayMessage(displayName, localDate);
+        var message = await BuildBirthdayMessageAsync(displayName, localDate, ct);
         await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
 
         return (true, "Sent birthday message.");
     }
 
-    private string BuildBirthdayMessage(string displayName, DateOnly localDate)
+    private async Task<string> BuildBirthdayMessageAsync(string displayName, DateOnly localDate, CancellationToken ct)
     {
         var template = BirthdayMessages[_random.Next(BirthdayMessages.Length)];
         var message = string.Format(template, displayName);
-        return $"{message}\n🗓️ **{localDate:dddd, MMM d}** · From all of us at the Gloomhaven table.";
+        var fallback = $"{message}\n🗓️ **{localDate:dddd, MMM d}** · From all of us at the Gloomhaven table.";
+
+        var system = "You write cheerful, compact Discord birthday wishes for a small tabletop group. Use the provided display name exactly (it may already include a mention). Keep it 2-4 short lines, be upbeat, and add a small Gloomhaven flavor. Avoid extra Markdown beyond light bold/emoji.";
+
+        var userPrompt = $"Today's birthday: {displayName}. Date: {localDate:dddd, MMM d}. Include the display name once near the top.";
+
+        return await _ai.GenerateAsync(system, userPrompt, fallback, temperature: 0.55f, maxTokens: 120, ct: ct);
     }
 
     private async Task<string> BuildMessageForSessionAsync(SessionInfo s, CancellationToken ct)
     {
-        // CANCELLED
-        if (s.IsCancelled)
-        {
-            var noteLine = string.IsNullOrWhiteSpace(s.Note)
-                ? ""
-                : $"\n**Reason:** {s.Note.Trim()}";
-
-            // Extra blank line before reason for readability
-            return
-                $"🛑 **Gloomhaven is cancelled today**\n" +
-                $"⏰ *Was scheduled for* **{s.EffectiveStartLocal:h:mm tt}**\n" +
-                $"{noteLine}";
-        }
-
-        // ACTIVE
         var dm = await _repo.GetRotationAsync(RotationRole.DM);
         var cook = await _repo.GetRotationAsync(RotationRole.Food);
 
@@ -164,14 +162,47 @@ public sealed class AnnouncementSender
             ? ""
             : $"\n\n📝 **Note:** {s.Note.Trim()}";
 
-        // Add blank line between header + assignments for readability
-        return
-            $"☀️ **Gloomhaven tonight!**\n" +
-            $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n" +
-            $"\n" +
-            $"**Assignments**\n" +
-            $"• 🧙 **DM:** {dmText}\n" +
-            $"• 🍕 **Food:** {cookText}" +
-            $"{noteBlock}";
+        var weatherSummary = await _weather.GetDailyForecastSummaryAsync(DateOnly.FromDateTime(s.EffectiveStartLocal), ct);
+
+        string fallback;
+        if (s.IsCancelled)
+        {
+            var noteLine = string.IsNullOrWhiteSpace(s.Note)
+                ? ""
+                : $"\n**Reason:** {s.Note.Trim()}";
+
+            fallback =
+                $"🛑 **Gloomhaven is cancelled today**\n" +
+                $"⏰ *Was scheduled for* **{s.EffectiveStartLocal:h:mm tt}**\n" +
+                $"{noteLine}" +
+                (string.IsNullOrWhiteSpace(weatherSummary) ? "" : $"\n{weatherSummary}");
+        }
+        else
+        {
+            fallback =
+                $"☀️ **Gloomhaven tonight!**\n" +
+                $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n" +
+                $"\n" +
+                $"**Assignments**\n" +
+                $"• 🧙 **DM:** {dmText}\n" +
+                $"• 🍕 **Food:** {cookText}" +
+                $"{noteBlock}" +
+                (string.IsNullOrWhiteSpace(weatherSummary) ? "" : $"\n{weatherSummary}");
+        }
+
+        var system = "You compose concise Discord announcements for a private Gloomhaven group. Keep it friendly, under 6 short lines, and preserve mention strings exactly. Always include date/time and DM/Food assignments when provided. If cancelled, make that the headline. Minimal Markdown only.";
+
+        var prompt = new StringBuilder();
+        prompt.AppendLine($"Session date: {s.EffectiveStartLocal:dddd, MMM d} at {s.EffectiveStartLocal:h:mm tt} local time.");
+        prompt.AppendLine($"Status: {(s.IsCancelled ? "Cancelled" : "Scheduled")}");
+        if (!string.IsNullOrWhiteSpace(s.Note))
+            prompt.AppendLine($"Note: {s.Note.Trim()}");
+        prompt.AppendLine($"DM: {dmText}");
+        prompt.AppendLine($"Food: {cookText}");
+        if (!string.IsNullOrWhiteSpace(weatherSummary))
+            prompt.AppendLine(weatherSummary);
+        prompt.AppendLine("Audience: returning players; be upbeat and clear.");
+
+        return await _ai.GenerateAsync(system, prompt.ToString(), fallback, temperature: 0.4f, maxTokens: 200, ct: ct);
     }
 }

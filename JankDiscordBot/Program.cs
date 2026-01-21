@@ -42,6 +42,8 @@ builder.Services.AddSingleton<BotStatusService>();
 builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<AnnouncementSender>();
 builder.Services.AddSingleton<ChatbotService>();
+builder.Services.AddHttpClient<AiTextService>();
+builder.Services.AddHttpClient<WeatherService>();
 builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();

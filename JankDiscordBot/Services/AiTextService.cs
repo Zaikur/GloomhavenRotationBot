@@ -42,7 +42,7 @@ public sealed class AiTextService
 
         var providerLabel = string.IsNullOrWhiteSpace(provider) ? "default" : provider;
 
-        // Some providers (e.g., local Ollama) may not require an API key
+        // Some providers like may not require an API key
         var requireKey = string.IsNullOrWhiteSpace(providerLabel)
             ? true
             : !providerLabel.Equals("ollama", StringComparison.OrdinalIgnoreCase);

@@ -23,10 +23,18 @@ public sealed class WeatherService
         if (lat == null || lon == null)
             return null;
 
+        return await GetDailyForecastSummaryForLocationAsync(date, lat.Value, lon.Value, units, ct);
+    }
+
+    /// <summary>
+    /// Gets weather forecast for a specific location (per-user weather).
+    /// </summary>
+    public async Task<string?> GetDailyForecastSummaryForLocationAsync(DateOnly date, double latitude, double longitude, string units = "metric", CancellationToken ct = default)
+    {
         var tempUnit = units == "metric" ? "celsius" : "fahrenheit";
         var precipUnit = units == "metric" ? "mm" : "inch";
 
-        var url = $"https://api.open-meteo.com/v1/forecast?latitude={lat.Value}&longitude={lon.Value}&timezone=auto&forecast_days=7&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&temperature_unit={tempUnit}&precipitation_unit={precipUnit}";
+        var url = $"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&timezone=auto&forecast_days=7&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&temperature_unit={tempUnit}&precipitation_unit={precipUnit}";
 
         try
         {

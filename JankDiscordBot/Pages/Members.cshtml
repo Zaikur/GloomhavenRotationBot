@@ -25,6 +25,7 @@
                             <th style="min-width:150px;">Character</th>
                             <th style="min-width:140px;">Birthday</th>
                             <th style="min-width:220px;">Notes</th>
+                            <th style="min-width:240px;">AI Notes (private)</th>
                             <th style="width:120px;"></th>
                         </tr>
                     </thead>
@@ -76,6 +77,10 @@
                                     </td>
                                     <td>
                                         <textarea class="form-control form-control-sm" name="Notes" rows="2" placeholder="Allergies, roleplay cues, snark ammo">@row.Notes</textarea>
+                                    </td>
+                                    <td>
+                                        <textarea class="form-control form-control-sm" name="AiNotes" rows="3" placeholder="Hidden from users; AI memory for this member">@row.AiNotes</textarea>
+                                        <div class="form-text text-white-50 small">Max @GloomhavenRotationBot.Data.MemberProfile.MaxAiNotesLength chars.</div>
                                     </td>
                                     <td class="text-end">
                                         <div class="d-flex flex-column gap-1">

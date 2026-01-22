@@ -88,8 +88,22 @@ public sealed class BotRepository
                 Notes TEXT NULL,
                 BirthdayMonth INTEGER NULL,
                 BirthdayDay INTEGER NULL,
-                BirthdayLastSentYear INTEGER NULL
+                BirthdayLastSentYear INTEGER NULL,
+                Latitude REAL NULL,
+                Longitude REAL NULL,
+                LocationName TEXT NULL,
+                AiNotes TEXT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS ChatMessages (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                UserId TEXT NOT NULL,
+                MessageText TEXT NOT NULL,
+                TimestampUtc TEXT NOT NULL,
+                IsBot INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_user_time ON ChatMessages(UserId, TimestampUtc DESC);
             ";
         cmd.ExecuteNonQuery();
 
@@ -402,7 +416,7 @@ public sealed class BotRepository
         await con.OpenAsync();
 
         await using var cmd = con.CreateCommand();
-        cmd.CommandText = "SELECT UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear FROM MemberProfiles";
+        cmd.CommandText = "SELECT UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear, Latitude, Longitude, LocationName, AiNotes FROM MemberProfiles";
 
         var list = new List<MemberProfile>();
         await using var r = await cmd.ExecuteReaderAsync();
@@ -415,7 +429,11 @@ public sealed class BotRepository
                 Notes = r.IsDBNull(2) ? null : r.GetString(2),
                 BirthdayMonth = r.IsDBNull(3) ? null : r.GetInt32(3),
                 BirthdayDay = r.IsDBNull(4) ? null : r.GetInt32(4),
-                BirthdayLastSentYear = r.IsDBNull(5) ? null : r.GetInt32(5)
+                BirthdayLastSentYear = r.IsDBNull(5) ? null : r.GetInt32(5),
+                Latitude = r.IsDBNull(6) ? null : r.GetDouble(6),
+                Longitude = r.IsDBNull(7) ? null : r.GetDouble(7),
+                LocationName = r.IsDBNull(8) ? null : r.GetString(8),
+                AiNotes = r.IsDBNull(9) ? null : r.GetString(9)
             });
         }
 
@@ -428,7 +446,7 @@ public sealed class BotRepository
         await con.OpenAsync();
 
         await using var cmd = con.CreateCommand();
-        cmd.CommandText = "SELECT UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear FROM MemberProfiles WHERE UserId = @id";
+        cmd.CommandText = "SELECT UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear, Latitude, Longitude, LocationName, AiNotes FROM MemberProfiles WHERE UserId = @id";
         cmd.Parameters.AddWithValue("@id", userId.ToString());
 
         await using var r = await cmd.ExecuteReaderAsync();
@@ -441,7 +459,11 @@ public sealed class BotRepository
             Notes = r.IsDBNull(2) ? null : r.GetString(2),
             BirthdayMonth = r.IsDBNull(3) ? null : r.GetInt32(3),
             BirthdayDay = r.IsDBNull(4) ? null : r.GetInt32(4),
-            BirthdayLastSentYear = r.IsDBNull(5) ? null : r.GetInt32(5)
+            BirthdayLastSentYear = r.IsDBNull(5) ? null : r.GetInt32(5),
+            Latitude = r.IsDBNull(6) ? null : r.GetDouble(6),
+            Longitude = r.IsDBNull(7) ? null : r.GetDouble(7),
+            LocationName = r.IsDBNull(8) ? null : r.GetString(8),
+            AiNotes = r.IsDBNull(9) ? null : r.GetString(9)
         };
     }
 
@@ -452,20 +474,28 @@ public sealed class BotRepository
 
         await using var cmd = con.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO MemberProfiles (UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear)
-            VALUES (@id, @c, @n, @bm, @bd, @bly)
+            INSERT INTO MemberProfiles (UserId, CharacterName, Notes, BirthdayMonth, BirthdayDay, BirthdayLastSentYear, Latitude, Longitude, LocationName, AiNotes)
+            VALUES (@id, @c, @n, @bm, @bd, @bly, @lat, @lon, @loc, @ai)
             ON CONFLICT(UserId) DO UPDATE SET
               CharacterName = excluded.CharacterName,
               Notes = excluded.Notes,
               BirthdayMonth = excluded.BirthdayMonth,
               BirthdayDay = excluded.BirthdayDay,
-              BirthdayLastSentYear = excluded.BirthdayLastSentYear;";
+              BirthdayLastSentYear = excluded.BirthdayLastSentYear,
+              Latitude = excluded.Latitude,
+              Longitude = excluded.Longitude,
+              LocationName = excluded.LocationName,
+              AiNotes = excluded.AiNotes;";
         cmd.Parameters.AddWithValue("@id", profile.UserId.ToString());
         cmd.Parameters.AddWithValue("@c", (object?)profile.CharacterName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@n", (object?)profile.Notes ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@bm", (object?)profile.BirthdayMonth ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@bd", (object?)profile.BirthdayDay ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@bly", (object?)profile.BirthdayLastSentYear ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@lat", (object?)profile.Latitude ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@lon", (object?)profile.Longitude ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@loc", (object?)profile.LocationName ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ai", (object?)profile.AiNotes ?? DBNull.Value);
 
         await cmd.ExecuteNonQueryAsync();
 
@@ -618,4 +648,98 @@ public sealed class BotRepository
 
         await cmd.ExecuteNonQueryAsync();
     }
+
+    // Chat message history
+    public async Task SaveChatMessageAsync(ulong userId, string messageText, bool isBot)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO ChatMessages (UserId, MessageText, TimestampUtc, IsBot)
+            VALUES (@uid, @msg, @ts, @bot);";
+        cmd.Parameters.AddWithValue("@uid", userId.ToString());
+        cmd.Parameters.AddWithValue("@msg", messageText);
+        cmd.Parameters.AddWithValue("@ts", DateTime.UtcNow.ToString("O"));
+        cmd.Parameters.AddWithValue("@bot", isBot ? 1 : 0);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Gets recent chat messages for a user.
+    /// Returns messages from today, or all messages within the specified timeframe window
+    /// if there's an active conversation (messages within conversationWindowMinutes).
+    /// Caps at maxMessages total.
+    /// </summary>
+    public async Task<List<ChatMessage>> GetRecentChatMessagesAsync(ulong userId, int conversationWindowMinutes = 30, int maxMessages = 20)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        var now = DateTime.UtcNow;
+        var todayStart = now.Date;
+        var conversationCutoff = now.AddMinutes(-conversationWindowMinutes);
+
+        await using var cmd = con.CreateCommand();
+        // Get messages from today OR within the conversation window, ordered newest first, then reverse
+        cmd.CommandText = @"
+            SELECT Id, UserId, MessageText, TimestampUtc, IsBot
+            FROM ChatMessages
+            WHERE UserId = @uid
+              AND (TimestampUtc >= @today OR TimestampUtc >= @convo)
+            ORDER BY TimestampUtc DESC
+            LIMIT @max;";
+        cmd.Parameters.AddWithValue("@uid", userId.ToString());
+        cmd.Parameters.AddWithValue("@today", todayStart.ToString("O"));
+        cmd.Parameters.AddWithValue("@convo", conversationCutoff.ToString("O"));
+        cmd.Parameters.AddWithValue("@max", maxMessages);
+
+        var list = new List<ChatMessage>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new ChatMessage
+            {
+                Id = r.GetInt64(0),
+                UserId = ulong.Parse(r.GetString(1)),
+                MessageText = r.GetString(2),
+                TimestampUtc = DateTime.Parse(r.GetString(3)).ToUniversalTime(),
+                IsBot = r.GetInt32(4) == 1
+            });
+        }
+
+        // Reverse to chronological order (oldest first)
+        list.Reverse();
+        return list;
+    }
+
+    /// <summary>
+    /// Updates the AI notes for a user. Enforces character limit.
+    /// </summary>
+    public async Task UpdateAiNotesAsync(ulong userId, string? aiNotes)
+    {
+        if (aiNotes != null && aiNotes.Length > MemberProfile.MaxAiNotesLength)
+        {
+            aiNotes = aiNotes.Substring(0, MemberProfile.MaxAiNotesLength);
+        }
+
+        var profile = await GetMemberProfileAsync(userId) ?? new MemberProfile { UserId = userId };
+        profile.AiNotes = aiNotes;
+        await UpsertMemberProfileAsync(profile, syncLegacyBirthdays: false);
+    }
+
+    /// <summary>
+    /// Updates the location for a user.
+    /// </summary>
+    public async Task UpdateUserLocationAsync(ulong userId, double? latitude, double? longitude, string? locationName)
+    {
+        var profile = await GetMemberProfileAsync(userId) ?? new MemberProfile { UserId = userId };
+        profile.Latitude = latitude;
+        profile.Longitude = longitude;
+        profile.LocationName = locationName;
+        await UpsertMemberProfileAsync(profile, syncLegacyBirthdays: false);
+    }
 }
+

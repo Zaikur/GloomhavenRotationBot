@@ -14,14 +14,16 @@ public sealed class ChatbotService
     private readonly BotRepository _repo;
     private readonly AiTextService _ai;
     private readonly WeatherService _weather;
+    private readonly AppSettingsService _settings;
     private DateTime? _pausedUntilUtc;
 
-    public ChatbotService(ScheduleService schedule, BotRepository repo, AiTextService ai, WeatherService weather)
+    public ChatbotService(ScheduleService schedule, BotRepository repo, AiTextService ai, WeatherService weather, AppSettingsService settings)
     {
         _schedule = schedule;
         _repo = repo;
         _ai = ai;
         _weather = weather;
+        _settings = settings;
     }
 
     /// <summary>
@@ -83,7 +85,23 @@ public sealed class ChatbotService
         string MentionOrPlaceholder(ulong? id) => id.HasValue ? $"<@{id.Value}>" : "_not set_";
 
         var sb = new StringBuilder();
-        sb.AppendLine("User message:");
+        
+        // Message history for context
+        var recentMessages = await _repo.GetRecentChatMessagesAsync(userId, conversationWindowMinutes: 30, maxMessages: 20);
+        if (recentMessages.Count > 0)
+        {
+            sb.AppendLine("Recent conversation history:");
+            foreach (var msg in recentMessages)
+            {
+                var sender = msg.IsBot ? "Bot" : (username ?? "User");
+                var timeAgo = (DateTime.UtcNow - msg.TimestampUtc).TotalMinutes;
+                var timeLabel = timeAgo < 1 ? "just now" : timeAgo < 60 ? $"{(int)timeAgo}m ago" : $"{(int)(timeAgo / 60)}h ago";
+                sb.AppendLine($"[{timeLabel}] {sender}: {msg.MessageText}");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("Current user message:");
         sb.AppendLine(userMessage.Trim());
         sb.AppendLine();
 
@@ -95,14 +113,31 @@ public sealed class ChatbotService
         {
             sb.AppendLine($"Next session: {nextSession.EffectiveStartLocal:dddd, MMM d @ h:mm tt} local time.");
             if (nextSession.IsCancelled)
-                sb.AppendLine("Status: CANCELLED.");
+                sb.AppendLine("Status: Cancelled.");
             else
                 sb.AppendLine("Status: Scheduled.");
 
             if (!string.IsNullOrWhiteSpace(nextSession.Note))
                 sb.AppendLine($"Session note: {nextSession.Note.Trim()}");
 
-            var wx = await _weather.GetDailyForecastSummaryAsync(DateOnly.FromDateTime(nextSession.EffectiveStartLocal));
+            // Try to get per-user weather first, fall back to global weather
+            string? wx = null;
+            if (profile?.Latitude != null && profile?.Longitude != null)
+            {
+                var (_, _, units) = await _settings.GetWeatherConfigAsync();
+                wx = await _weather.GetDailyForecastSummaryForLocationAsync(
+                    DateOnly.FromDateTime(nextSession.EffectiveStartLocal),
+                    profile.Latitude.Value,
+                    profile.Longitude.Value,
+                    units);
+                if (!string.IsNullOrWhiteSpace(wx) && !string.IsNullOrWhiteSpace(profile.LocationName))
+                    wx = $"{wx} (at {profile.LocationName})";
+            }
+            else
+            {
+                wx = await _weather.GetDailyForecastSummaryAsync(DateOnly.FromDateTime(nextSession.EffectiveStartLocal));
+            }
+
             if (!string.IsNullOrWhiteSpace(wx))
                 sb.AppendLine(wx);
         }
@@ -114,6 +149,7 @@ public sealed class ChatbotService
         sb.AppendLine($"Current DM: {MentionOrPlaceholder(dmCurrent)}");
         sb.AppendLine($"Current food: {MentionOrPlaceholder(foodCurrent)}");
 
+        sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(username))
             sb.AppendLine($"Requesting user: {username} ({userId})");
         else
@@ -128,12 +164,26 @@ public sealed class ChatbotService
                 sb.AppendLine($"Notes: {profile.Notes}");
             if (profile.BirthdayMonth is not null && profile.BirthdayDay is not null)
                 sb.AppendLine($"Birthday: {profile.BirthdayMonth}/{profile.BirthdayDay}");
+            if (profile.Latitude != null && profile.Longitude != null && !string.IsNullOrWhiteSpace(profile.LocationName))
+                sb.AppendLine($"Location: {profile.LocationName} ({profile.Latitude:F4}, {profile.Longitude:F4})");
+
+            // Include AI notes
+            if (!string.IsNullOrWhiteSpace(profile.AiNotes))
+            {
+                sb.AppendLine("AI notes about this user:");
+                sb.AppendLine(profile.AiNotes);
+            }
         }
 
-        var system = "You are a concise, helpful Discord bot for a private Gloomhaven group. Answer using the provided facts. Keep replies under 4 short sentences. Use the provided Discord mention strings exactly as-is. If no session exists, say so. If a session is cancelled, make that clear. If you do not know the answer, say so politely. If the user message is unrelated to Gloomhaven/scheduling, pivot to a witty, sarcastic, slightly cruel jab personalized with any profile details given (character, notes). Never invent members; only use provided info.";
+        var system = $@"You are a concise, helpful Discord bot for a private Gloomhaven group. Answer using the provided facts. Keep replies under 4 short sentences. Use the provided Discord mention strings exactly as-is. If no session exists, say so. If a session is cancelled, make that clear. If you do not know the answer, say so politely. If the user message is unrelated to Gloomhaven/scheduling, pivot to a witty, sarcastic, slightly cruel jab personalized with any profile details given (character, notes). Never invent members; only use provided info.
+
+AI NOTES FEATURE: You can keep notes about users to remember important context from conversations. To update your notes for the current user, include this EXACT JSON structure anywhere in your response (it will be hidden from the user):
+{{""ai_note_update"": ""Your notes here (max {MemberProfile.MaxAiNotesLength} chars)""}}
+
+Use this to remember preferences, repeated questions, running jokes, or anything that would help you provide better responses in future conversations. Keep notes concise and relevant. You can update notes at any time. Setting an empty string will clear your notes for this user, and the entire note block will be overwritten with each update.";
 
         var fallback = GetFallbackResponse();
-        return await _ai.GenerateAsync(system, sb.ToString(), fallback, temperature: 0.35f, maxTokens: 200);
+        return await _ai.GenerateAsync(system, sb.ToString(), fallback, temperature: 0.35f, maxTokens: 250);
     }
 
     /// <summary>
@@ -600,4 +650,29 @@ public sealed class ChatbotService
         return string.Join(", ", ordered.Select(id => $"<@{id}>")
             .DefaultIfEmpty("_not set_"));
     }
+
+    /// <summary>
+    /// Extracts AI note updates from a response and returns the cleaned response.
+    /// If an ai_note_update is found, it's extracted and the userId's notes are updated.
+    /// </summary>
+    public async Task<(string cleanedResponse, string? aiNoteUpdate)> ExtractAndProcessAiNotesAsync(string response, ulong userId)
+    {
+        // Look for JSON pattern: {"ai_note_update": "..."}
+        var pattern = @"\{""ai_note_update""\s*:\s*""([^""]*)""\}";
+        var match = Regex.Match(response, pattern, RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+            return (response, null);
+
+        var noteUpdate = match.Groups[1].Value;
+        
+        // Update the notes in the database
+        await _repo.UpdateAiNotesAsync(userId, string.IsNullOrWhiteSpace(noteUpdate) ? null : noteUpdate);
+
+        // Remove the JSON from the response
+        var cleanedResponse = Regex.Replace(response, pattern, "", RegexOptions.IgnoreCase).Trim();
+
+        return (cleanedResponse, noteUpdate);
+    }
 }
+

@@ -36,6 +36,7 @@ public class MembersModel : PageModel
                     Name = m.Name,
                     CharacterName = profile?.CharacterName ?? "",
                     Notes = profile?.Notes ?? "",
+                    AiNotes = profile?.AiNotes ?? "",
                     BirthdayMonth = profile?.BirthdayMonth,
                     BirthdayDay = profile?.BirthdayDay
                 };
@@ -44,13 +45,25 @@ public class MembersModel : PageModel
             .ToList();
     }
 
-    public async Task<IActionResult> OnPostSaveAsync(string userId, string? characterName, string? notes, int? birthdayMonth, int? birthdayDay)
+    public async Task<IActionResult> OnPostSaveAsync(string userId, string? characterName, string? notes, string? aiNotes, int? birthdayMonth, int? birthdayDay)
     {
         if (!ulong.TryParse(userId, out var id) || id == 0) return RedirectToPage();
 
         var profile = await _repo.GetMemberProfileAsync(id) ?? new MemberProfile { UserId = id };
         profile.CharacterName = string.IsNullOrWhiteSpace(characterName) ? null : characterName.Trim();
         profile.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+
+        if (!string.IsNullOrWhiteSpace(aiNotes))
+        {
+            var trimmed = aiNotes.Trim();
+            profile.AiNotes = trimmed.Length > MemberProfile.MaxAiNotesLength
+                ? trimmed.Substring(0, MemberProfile.MaxAiNotesLength)
+                : trimmed;
+        }
+        else
+        {
+            profile.AiNotes = null;
+        }
 
         if (birthdayMonth.HasValue && birthdayDay.HasValue)
         {
@@ -81,6 +94,7 @@ public class MembersModel : PageModel
         public string Name { get; set; } = "";
         public string? CharacterName { get; set; }
         public string? Notes { get; set; }
+        public string? AiNotes { get; set; }
         public int? BirthdayMonth { get; set; }
         public int? BirthdayDay { get; set; }
     }

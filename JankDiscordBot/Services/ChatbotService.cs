@@ -74,8 +74,6 @@ public sealed class ChatbotService
         var nowLocal = await _schedule.LocalNowAsync();
         var nextSession = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
 
-        var wantsWeather = IsWeatherQuery(userMessage);
-
         var dmRotation = await _repo.GetRotationAsync(RotationRole.DM);
         var foodRotation = await _repo.GetRotationAsync(RotationRole.Food);
 
@@ -122,28 +120,28 @@ public sealed class ChatbotService
             if (!string.IsNullOrWhiteSpace(nextSession.Note))
                 sb.AppendLine($"Session note: {nextSession.Note.Trim()}");
 
-            if (wantsWeather)
+            // Always fetch weather, but AI decides whether to mention it
+            string? wx = null;
+            if (profile?.Latitude != null && profile?.Longitude != null)
             {
-                // Try to get per-user weather first, fall back to global weather
-                string? wx = null;
-                if (profile?.Latitude != null && profile?.Longitude != null)
-                {
-                    var (_, _, units) = await _settings.GetWeatherConfigAsync();
-                    wx = await _weather.GetDailyForecastSummaryForLocationAsync(
-                        DateOnly.FromDateTime(nextSession.EffectiveStartLocal),
-                        profile.Latitude.Value,
-                        profile.Longitude.Value,
-                        units);
-                    if (!string.IsNullOrWhiteSpace(wx) && !string.IsNullOrWhiteSpace(profile.LocationName))
-                        wx = $"{wx} (at {profile.LocationName})";
-                }
-                else
-                {
-                    wx = await _weather.GetDailyForecastSummaryAsync(DateOnly.FromDateTime(nextSession.EffectiveStartLocal));
-                }
+                var (_, _, units) = await _settings.GetWeatherConfigAsync();
+                wx = await _weather.GetDailyForecastSummaryForLocationAsync(
+                    DateOnly.FromDateTime(nextSession.EffectiveStartLocal),
+                    profile.Latitude.Value,
+                    profile.Longitude.Value,
+                    units);
+                if (!string.IsNullOrWhiteSpace(wx) && !string.IsNullOrWhiteSpace(profile.LocationName))
+                    wx = $"{wx} (at {profile.LocationName})";
+            }
+            else
+            {
+                wx = await _weather.GetDailyForecastSummaryAsync(DateOnly.FromDateTime(nextSession.EffectiveStartLocal));
+            }
 
-                if (!string.IsNullOrWhiteSpace(wx))
-                    sb.AppendLine(wx);
+            if (!string.IsNullOrWhiteSpace(wx))
+            {
+                sb.AppendLine($"Weather forecast: {wx}");
+                sb.AppendLine("(Only mention weather if it's noteworthy, user asks about it, or it's relevant to their question)");
             }
         }
 
@@ -180,7 +178,9 @@ public sealed class ChatbotService
             }
         }
 
-        var system = $@"You are a Discord bot for a private Gloomhaven group. Your role is a tired, witty DM who may be fed up with the players shenanigans. Answer using the provided facts, chat history, and notes provided. Keep replies under 4 short sentences. Use the provided Discord mention strings exactly as-is. If no session exists, say so. If a session is cancelled, make that clear. If you do not know the answer, say so. If the user message to you seems ridiculous, they ask the same question repeatedly, or you just feel like it, pivot to a witty, sarcastic, slightly cruel jab (e.g. -Forgot again? How typical of vermi- I mean a Vermling.-, -Rain today, at least that'll help clean your next massacre-) personalized with any profile details given (character, notes). Never invent members; only use provided info and keep responses on theme..
+        var system = $@"You are a Discord bot for a private Gloomhaven group. Your role is a tired, witty DM who may be fed up with the players shenanigans. Answer using the provided facts, chat history, and notes provided. Keep replies under 4 short sentences. Use the provided Discord mention strings exactly as-is. If no session exists, say so. If a session is cancelled, make that clear. If you do not know the answer, say so. If the user message to you seems ridiculous, they ask the same question repeatedly, or you just feel like it, pivot to a witty, sarcastic, slightly cruel jab (e.g. -Forgot again? How typical of vermi- I mean a Vermling.-, -Rain today, at least that'll help clean your next massacre-) personalized with any profile details given (character, notes). Never invent members; only use provided info and keep responses on theme.
+
+WEATHER: If weather info is provided, only mention it if: 1) user explicitly asks about weather/conditions, 2) it's particularly noteworthy (storms, extreme temps, heavy rain), or 3) it directly relates to their question. Otherwise ignore it.
 
 AI NOTES FEATURE: You can keep notes about users to remember important context from conversations. To update your notes for the current user, include this EXACT JSON structure anywhere in your response (it will be hidden from the user):
 {{""ai_note_update"": ""Your notes here (max {MemberProfile.MaxAiNotesLength} chars)""}}
@@ -201,8 +201,10 @@ Use this to remember preferences, repeated questions, running jokes, or anything
 
         var patterns = new[]
         {
-            @"\b(weather|forecast|rain|snow|temperature|temps|hot|cold|storm)\b",
-            @"\b(what's|whats|how's|hows|is it)\b.*\b(weather|forecast)\b",
+            @"\b(weather|forecast|rain|snow|temperature|temps|hot|cold|storm|wind|cloudy|sunny)\b",
+            @"\b(what's|whats|how's|hows|is it)\b.*\b(weather|forecast|outside|like out|out there)\b",
+            @"\b(die|survive|make it|get there|going to be|conditions|umbrella|jacket|coat)\b.*\b(tonight|today|there|getting)",
+            @"\b(need|should I bring)\b.*\b(umbrella|raincoat|jacket|coat)\b",
         };
 
         foreach (var p in patterns)

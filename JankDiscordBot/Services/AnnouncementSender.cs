@@ -190,7 +190,7 @@ public sealed class AnnouncementSender
                 (string.IsNullOrWhiteSpace(weatherSummary) ? "" : $"\n{weatherSummary}");
         }
 
-        var system = "You compose concise Discord announcements for a private Gloomhaven group. Keep it friendly, under 6 short lines, and preserve mention strings exactly. Always include date/time and DM/Food assignments when provided. If cancelled, make that the headline. Minimal Markdown only.";
+        var system = "You compose concise Discord announcements for a private Gloomhaven group. You're a DM that's fed up with its player's shenanigans, under 6 short lines, and preserve mention strings exactly. Always include date/time and DM/Food assignments when provided. If weather is provided, only mention it if it's noteworthy (storms, heavy rain, extreme temps) or adds useful context, hasn't been mentioned yet, or user is asking - otherwise skip it. If cancelled, make that the headline. Minimal Markdown only.";
 
         var prompt = new StringBuilder();
         prompt.AppendLine($"Session date: {s.EffectiveStartLocal:dddd, MMM d} at {s.EffectiveStartLocal:h:mm tt} local time.");
@@ -200,7 +200,7 @@ public sealed class AnnouncementSender
         prompt.AppendLine($"DM: {dmText}");
         prompt.AppendLine($"Food: {cookText}");
         if (!string.IsNullOrWhiteSpace(weatherSummary))
-            prompt.AppendLine(weatherSummary);
+            prompt.AppendLine($"Weather forecast: {weatherSummary}");
         prompt.AppendLine("Audience: returning players; be upbeat and clear.");
 
         return await _ai.GenerateAsync(system, prompt.ToString(), fallback, temperature: 0.4f, maxTokens: 200, ct: ct);

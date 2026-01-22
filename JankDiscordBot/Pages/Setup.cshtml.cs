@@ -27,6 +27,8 @@ public class SetupModel : PageModel
     [BindProperty] public string AiEndpoint { get; set; } = "";
     [BindProperty] public string AiModel { get; set; } = "";
     [BindProperty] public string? AiApiKey { get; set; }
+    [BindProperty] public double? AiTemperature { get; set; }
+    [BindProperty] public int? AiMaxTokens { get; set; }
 
     [BindProperty] public double? WeatherLatitude { get; set; }
     [BindProperty] public double? WeatherLongitude { get; set; }
@@ -50,11 +52,13 @@ public class SetupModel : PageModel
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
 
-        var (provider, endpoint, model, apiKey) = await _settings.GetAiConfigAsync();
+        var (provider, endpoint, model, apiKey, temp, maxTokens) = await _settings.GetAiConfigAsync();
         AiProvider = provider;
         AiEndpoint = endpoint;
         AiModel = model;
         AiApiKey = string.IsNullOrWhiteSpace(apiKey) ? null : ""; // never echo; blank means stored
+        AiTemperature = temp;
+        AiMaxTokens = maxTokens;
 
         var (lat, lon, units) = await _settings.GetWeatherConfigAsync();
         WeatherLatitude = lat;
@@ -93,7 +97,7 @@ public class SetupModel : PageModel
         await _settings.SaveDiscordConfigAsync(Token, gid, RegisterToGuild);
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
-        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey);
+        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey, AiTemperature, AiMaxTokens);
         await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
         Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
@@ -212,7 +216,7 @@ public class SetupModel : PageModel
 
     public async Task<IActionResult> OnPostSaveAiAsync()
     {
-        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey);
+        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey, AiTemperature, AiMaxTokens);
         await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
         Message = "AI and weather settings saved.";

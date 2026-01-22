@@ -137,6 +137,18 @@
                 <div class="form-text text-white-50">For Ollama/local models, leave blank.</div>
             </div>
 
+            <div class="col-12 col-md-6">
+                <label class="form-label">Temperature (0.0 - 2.0)</label>
+                <input class="form-control" name="AiTemperature" type="number" step="0.05" min="0" max="2" value="@(Model.AiTemperature?.ToString("0.##"))" placeholder="0.5" />
+                <div class="form-text text-white-50">Leave blank to use the per-call default set by the feature (e.g., 0.35 for chat replies).</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Max tokens</label>
+                <input class="form-control" name="AiMaxTokens" type="number" min="16" max="4000" value="@(Model.AiMaxTokens?.ToString())" placeholder="256" />
+                <div class="form-text text-white-50">Leave blank to use the per-call default.</div>
+            </div>
+
             <div class="col-12 d-flex flex-wrap gap-2">
                 <button class="btn btn-primary" type="submit">Save AI settings</button>
             </div>

@@ -38,8 +38,8 @@ public sealed class BirthdayService : BackgroundService
                 var nowLocal = await _schedule.LocalNowAsync();
                 var today = DateOnly.FromDateTime(nowLocal);
 
-                // run at 9:00 local only once per day
-                if (nowLocal.Hour == 9 && lastRun != today)
+                // Run once per day at/after 9:00am if it hasn't sent yet today.
+                if (nowLocal.Hour >= 9 && lastRun != today)
                 {
                     await RunForTodayAsync(today, stoppingToken);
                     lastRun = today;

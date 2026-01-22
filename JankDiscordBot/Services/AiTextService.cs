@@ -26,7 +26,7 @@ public sealed class AiTextService
 
     public async Task<string> GenerateAsync(string systemPrompt, string userPrompt, string fallback, float temperature = 0.5f, int maxTokens = 256, CancellationToken ct = default)
     {
-        var (provider, endpointStored, modelStored, keyStored) = await _settings.GetAiConfigAsync();
+        var (provider, endpointStored, modelStored, keyStored, tempStored, maxTokensStored) = await _settings.GetAiConfigAsync();
 
         var endpoint = !string.IsNullOrWhiteSpace(endpointStored)
             ? endpointStored
@@ -53,13 +53,17 @@ public sealed class AiTextService
             return fallback;
         }
 
+        // Apply stored overrides if provided
+        var finalTemp = tempStored.HasValue ? (float)Math.Clamp(tempStored.Value, 0.0, 2.0) : temperature;
+        var finalMaxTokens = maxTokensStored.HasValue ? Math.Max(16, maxTokensStored.Value) : maxTokens;
+
         try
         {
             var payload = new
             {
                 model,
-                temperature,
-                max_tokens = maxTokens,
+                temperature = finalTemp,
+                max_tokens = finalMaxTokens,
                 messages = new[]
                 {
                     new { role = "system", content = systemPrompt },

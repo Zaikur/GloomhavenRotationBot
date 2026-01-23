@@ -148,6 +148,37 @@ public sealed class BotRepository
                 }
             }
         }
+
+        MigrateAddColumnIfMissing(con, "MemberProfiles", "Latitude", "REAL NULL");
+        MigrateAddColumnIfMissing(con, "MemberProfiles", "Longitude", "REAL NULL");
+        MigrateAddColumnIfMissing(con, "MemberProfiles", "LocationName", "TEXT NULL");
+        MigrateAddColumnIfMissing(con, "MemberProfiles", "AiNotes", "TEXT NULL");
+    }
+
+    private static void MigrateAddColumnIfMissing(SqliteConnection con, string tableName, string columnName, string columnDef)
+    {
+        // Check if column exists by querying PRAGMA table_info
+        using var check = con.CreateCommand();
+        check.CommandText = $"PRAGMA table_info({tableName})";
+        using var reader = check.ExecuteReader();
+        bool exists = false;
+        while (reader.Read())
+        {
+            var name = reader.GetString(1); // column name is at index 1
+            if (name.Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                exists = true;
+                break;
+            }
+        }
+        reader.Close();
+
+        if (!exists)
+        {
+            using var alter = con.CreateCommand();
+            alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDef}";
+            alter.ExecuteNonQuery();
+        }
     }
 
     public async Task<RotationState> GetRotationAsync(RotationRole role)

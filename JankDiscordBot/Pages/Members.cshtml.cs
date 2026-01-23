@@ -18,6 +18,10 @@ public class MembersModel : PageModel
     public List<MemberRow> Rows { get; private set; } = new();
     public string? Warning { get; private set; }
 
+    // Binding for bulk save
+    [BindProperty]
+    public List<MemberUpdate>? MemberUpdates { get; set; }
+
     public async Task OnGetAsync()
     {
         var guildMembers = await _members.GetMembersAsync();
@@ -38,53 +42,61 @@ public class MembersModel : PageModel
                     Notes = profile?.Notes ?? "",
                     AiNotes = profile?.AiNotes ?? "",
                     BirthdayMonth = profile?.BirthdayMonth,
-                    BirthdayDay = profile?.BirthdayDay
+                    BirthdayDay = profile?.BirthdayDay,
+                    Latitude = profile?.Latitude,
+                    Longitude = profile?.Longitude,
+                    LocationName = profile?.LocationName ?? ""
                 };
             })
             .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    public async Task<IActionResult> OnPostSaveAsync(string userId, string? characterName, string? notes, string? aiNotes, int? birthdayMonth, int? birthdayDay)
+    public async Task<IActionResult> OnPostSaveAsync()
     {
-        if (!ulong.TryParse(userId, out var id) || id == 0) return RedirectToPage();
+        if (MemberUpdates == null || MemberUpdates.Count == 0)
+            return RedirectToPage();
 
-        var profile = await _repo.GetMemberProfileAsync(id) ?? new MemberProfile { UserId = id };
-        profile.CharacterName = string.IsNullOrWhiteSpace(characterName) ? null : characterName.Trim();
-        profile.Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
-
-        if (!string.IsNullOrWhiteSpace(aiNotes))
+        foreach (var update in MemberUpdates)
         {
-            var trimmed = aiNotes.Trim();
-            profile.AiNotes = trimmed.Length > MemberProfile.MaxAiNotesLength
-                ? trimmed.Substring(0, MemberProfile.MaxAiNotesLength)
-                : trimmed;
-        }
-        else
-        {
-            profile.AiNotes = null;
+            if (!ulong.TryParse(update.UserId, out var id) || id == 0)
+                continue;
+
+            var profile = await _repo.GetMemberProfileAsync(id) ?? new MemberProfile { UserId = id };
+            profile.CharacterName = string.IsNullOrWhiteSpace(update.CharacterName) ? null : update.CharacterName.Trim();
+            profile.Notes = string.IsNullOrWhiteSpace(update.Notes) ? null : update.Notes.Trim();
+            profile.LocationName = string.IsNullOrWhiteSpace(update.LocationName) ? null : update.LocationName.Trim();
+
+            if (!string.IsNullOrWhiteSpace(update.AiNotes))
+            {
+                var trimmed = update.AiNotes.Trim();
+                profile.AiNotes = trimmed.Length > MemberProfile.MaxAiNotesLength
+                    ? trimmed.Substring(0, MemberProfile.MaxAiNotesLength)
+                    : trimmed;
+            }
+            else
+            {
+                profile.AiNotes = null;
+            }
+
+            if (update.BirthdayMonth.HasValue && update.BirthdayDay.HasValue)
+            {
+                profile.BirthdayMonth = Math.Clamp(update.BirthdayMonth.Value, 1, 12);
+                profile.BirthdayDay = Math.Clamp(update.BirthdayDay.Value, 1, 31);
+            }
+            else
+            {
+                profile.BirthdayMonth = null;
+                profile.BirthdayDay = null;
+                profile.BirthdayLastSentYear = null;
+            }
+
+            profile.Latitude = update.Latitude;
+            profile.Longitude = update.Longitude;
+
+            await _repo.UpsertMemberProfileAsync(profile);
         }
 
-        if (birthdayMonth.HasValue && birthdayDay.HasValue)
-        {
-            profile.BirthdayMonth = Math.Clamp(birthdayMonth.Value, 1, 12);
-            profile.BirthdayDay = Math.Clamp(birthdayDay.Value, 1, 31);
-        }
-        else
-        {
-            profile.BirthdayMonth = null;
-            profile.BirthdayDay = null;
-            profile.BirthdayLastSentYear = null;
-        }
-
-        await _repo.UpsertMemberProfileAsync(profile);
-        return RedirectToPage();
-    }
-
-    public async Task<IActionResult> OnPostClearAsync(string userId)
-    {
-        if (!ulong.TryParse(userId, out var id) || id == 0) return RedirectToPage();
-        await _repo.DeleteMemberProfileAsync(id);
         return RedirectToPage();
     }
 
@@ -97,5 +109,21 @@ public class MembersModel : PageModel
         public string? AiNotes { get; set; }
         public int? BirthdayMonth { get; set; }
         public int? BirthdayDay { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
+        public string? LocationName { get; set; }
+    }
+
+    public sealed class MemberUpdate
+    {
+        public string UserId { get; set; } = "";
+        public string? CharacterName { get; set; }
+        public string? Notes { get; set; }
+        public string? AiNotes { get; set; }
+        public int? BirthdayMonth { get; set; }
+        public int? BirthdayDay { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
+        public string? LocationName { get; set; }
     }
 }

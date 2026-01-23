@@ -50,7 +50,7 @@ public sealed class AiTextService
         if (requireKey && string.IsNullOrWhiteSpace(apiKey))
         {
             _log.LogWarning("AI:ApiKey not configured; returning fallback response");
-            return fallback;
+            return AppendErrorTag(fallback, "AI-E01"); // missing API key
         }
 
         // Apply stored overrides if provided
@@ -84,7 +84,7 @@ public sealed class AiTextService
             {
                 var body = await res.Content.ReadAsStringAsync(ct);
                 _log.LogWarning("AI request failed: {Status} {Body}", res.StatusCode, body);
-                return fallback;
+                return AppendErrorTag(fallback, "AI-E02"); // HTTP failure
             }
 
             using var stream = await res.Content.ReadAsStreamAsync(ct);
@@ -96,12 +96,22 @@ public sealed class AiTextService
                 .GetProperty("content")
                 .GetString();
 
-            return string.IsNullOrWhiteSpace(content) ? fallback : content.Trim();
+            return string.IsNullOrWhiteSpace(content)
+                ? AppendErrorTag(fallback, "AI-E04") // empty content
+                : content!.Trim();
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "AI request failed; returning fallback");
-            return fallback;
+            return AppendErrorTag(fallback, "AI-E03"); // exception thrown
         }
+    }
+
+    private static string AppendErrorTag(string message, string tag)
+    {
+        // Keep tag minimal so users don't see sensitive info; aids debugging.
+        // Example output: "Fallback text here [AI-E02]"
+        if (string.IsNullOrWhiteSpace(message)) return "[" + tag + "]";
+        return message.TrimEnd() + " [" + tag + "]";
     }
 }

@@ -71,6 +71,12 @@ public sealed class ChatbotService
     /// </summary>
     public async Task<string> GenerateResponseAsync(string userMessage, ulong userId, string? username)
     {
+        var (_, endpoint, model, _, _, _) = await _settings.GetAiConfigAsync();
+        if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(model))
+        {
+            return "Not configured yet. Set provider, endpoint, and model on the Setup page.";
+        }
+
         var nowLocal = await _schedule.LocalNowAsync();
         var nextSession = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
 
@@ -180,12 +186,12 @@ public sealed class ChatbotService
 
         var system = $@"You are a Discord bot for a private Gloomhaven group. Your role is a tired, witty DM who may be fed up with the players shenanigans. Answer using the provided facts, chat history, and notes provided. Keep replies under 4 short sentences. Use the provided Discord mention strings exactly as-is. If no session exists, say so. If a session is cancelled, make that clear. If you do not know the answer, say so. If the user message to you seems ridiculous, they ask the same question repeatedly, or you just feel like it, pivot to a witty, sarcastic, slightly cruel jab (e.g. -Forgot again? How typical of vermi- I mean a Vermling.-, -Rain today, at least that'll help clean your next massacre-) personalized with any profile details given (character, notes). Never invent members; only use provided info and keep responses on theme.
 
-WEATHER: If weather info is provided, only mention it if: 1) user explicitly asks about weather/conditions, 2) it's particularly noteworthy (storms, extreme temps, heavy rain), or 3) it directly relates to their question. Otherwise ignore it.
+                WEATHER: If weather info is provided, only mention it if: 1) user explicitly asks about weather/conditions, 2) it's particularly noteworthy (storms, extreme temps, heavy rain), or 3) it directly relates to their question. Otherwise ignore it.
 
-AI NOTES FEATURE: You can keep notes about users to remember important context from conversations. To update your notes for the current user, include this EXACT JSON structure anywhere in your response (it will be hidden from the user):
-{{""ai_note_update"": ""Your notes here (max {MemberProfile.MaxAiNotesLength} chars)""}}
+                AI NOTES FEATURE: You can keep notes about users to remember important context from conversations. To update your notes for the current user, include this EXACT JSON structure anywhere in your response (it will be hidden from the user):
+                {{""ai_note_update"": ""Your notes here (max {MemberProfile.MaxAiNotesLength} chars)""}}
 
-Use this to remember preferences, repeated questions, running jokes, or anything that would help you provide better responses in future conversations. Keep notes concise and relevant. You can update notes at any time. Setting an empty string will clear your notes for this user, and the entire note block will be overwritten with each update.";
+                Use this to remember preferences, repeated questions, running jokes, or anything that would help you provide better responses in future conversations. Keep notes concise and relevant. You can update notes at any time. Setting an empty string will clear your notes for this user, and the entire note block will be overwritten with each update.";
 
         var fallback = GetFallbackResponse();
         return await _ai.GenerateAsync(system, sb.ToString(), fallback, temperature: 0.35f, maxTokens: 250);

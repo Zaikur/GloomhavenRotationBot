@@ -104,6 +104,69 @@ public sealed class BotRepository
             );
 
             CREATE INDEX IF NOT EXISTS idx_chat_user_time ON ChatMessages(UserId, TimestampUtc DESC);
+
+            CREATE TABLE IF NOT EXISTS Surveys (
+                Id TEXT PRIMARY KEY,
+                Title TEXT NOT NULL,
+                Description TEXT NULL,
+                CreatedByUserId TEXT NOT NULL,
+                CreatedUtc TEXT NOT NULL,
+                CloseAtUtc TEXT NOT NULL,
+                Status TEXT NOT NULL DEFAULT 'Open',
+                PostChannelId TEXT NULL,
+                ResultsMessageId TEXT NULL,
+                HotTakes TEXT NULL,
+                InvitedCount INTEGER NOT NULL DEFAULT 0,
+                RespondedCount INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS SurveyQuestions (
+                Id TEXT PRIMARY KEY,
+                SurveyId TEXT NOT NULL,
+                Order_Index INTEGER NOT NULL,
+                Text TEXT NOT NULL,
+                FOREIGN KEY(SurveyId) REFERENCES Surveys(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_survey_questions ON SurveyQuestions(SurveyId);
+
+            CREATE TABLE IF NOT EXISTS SurveyOptions (
+                Id TEXT PRIMARY KEY,
+                QuestionId TEXT NOT NULL,
+                Order_Index INTEGER NOT NULL,
+                Text TEXT NOT NULL,
+                ResponseCount INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(QuestionId) REFERENCES SurveyQuestions(Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_question_options ON SurveyOptions(QuestionId);
+
+            CREATE TABLE IF NOT EXISTS SurveyResponses (
+                Id TEXT PRIMARY KEY,
+                SurveyId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                QuestionId TEXT NOT NULL,
+                SelectedOptionId TEXT NOT NULL,
+                SubmittedUtc TEXT NOT NULL,
+                FOREIGN KEY(SurveyId) REFERENCES Surveys(Id) ON DELETE CASCADE,
+                FOREIGN KEY(QuestionId) REFERENCES SurveyQuestions(Id) ON DELETE CASCADE,
+                FOREIGN KEY(SelectedOptionId) REFERENCES SurveyOptions(Id) ON DELETE CASCADE,
+                UNIQUE(SurveyId, UserId, QuestionId)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_responses_survey_user ON SurveyResponses(SurveyId, UserId);
+
+            CREATE TABLE IF NOT EXISTS SurveyFeedback (
+                Id TEXT PRIMARY KEY,
+                SurveyId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                FeedbackText TEXT NOT NULL,
+                SubmittedUtc TEXT NOT NULL,
+                FOREIGN KEY(SurveyId) REFERENCES Surveys(Id) ON DELETE CASCADE,
+                UNIQUE(SurveyId, UserId)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_feedback_survey ON SurveyFeedback(SurveyId);
             ";
         cmd.ExecuteNonQuery();
 
@@ -772,5 +835,377 @@ public sealed class BotRepository
         profile.LocationName = locationName;
         await UpsertMemberProfileAsync(profile, syncLegacyBirthdays: false);
     }
-}
 
+    // Survey-related methods
+    public async Task<Survey> CreateSurveyAsync(Survey survey)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO Surveys (Id, Title, Description, CreatedByUserId, CreatedUtc, CloseAtUtc, Status, PostChannelId, ResultsMessageId, HotTakes, InvitedCount, RespondedCount)
+            VALUES (@id, @t, @d, @cby, @cc, @cl, @s, @pch, @rmsg, @ht, @inv, @resp)";
+        cmd.Parameters.AddWithValue("@id", survey.Id);
+        cmd.Parameters.AddWithValue("@t", survey.Title);
+        cmd.Parameters.AddWithValue("@d", (object?)survey.Description ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@cby", survey.CreatedByUserId.ToString());
+        cmd.Parameters.AddWithValue("@cc", survey.CreatedUtc.ToString("O"));
+        cmd.Parameters.AddWithValue("@cl", survey.CloseAtUtc.ToString("O"));
+        cmd.Parameters.AddWithValue("@s", survey.Status);
+        cmd.Parameters.AddWithValue("@pch", (object?)(survey.PostChannelId.HasValue ? survey.PostChannelId.Value.ToString() : null) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@rmsg", (object?)(survey.ResultsMessageId.HasValue ? survey.ResultsMessageId.Value.ToString() : null) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ht", (object?)survey.HotTakes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@inv", survey.InvitedCount);
+        cmd.Parameters.AddWithValue("@resp", survey.RespondedCount);
+
+        await cmd.ExecuteNonQueryAsync();
+        return survey;
+    }
+
+    public async Task<Survey?> GetSurveyAsync(string surveyId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, Title, Description, CreatedByUserId, CreatedUtc, CloseAtUtc, Status, PostChannelId, ResultsMessageId, HotTakes, InvitedCount, RespondedCount
+            FROM Surveys WHERE Id = @id";
+        cmd.Parameters.AddWithValue("@id", surveyId);
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+
+        return new Survey
+        {
+            Id = r.GetString(0),
+            Title = r.GetString(1),
+            Description = r.IsDBNull(2) ? null : r.GetString(2),
+            CreatedByUserId = ulong.Parse(r.GetString(3)),
+            CreatedUtc = DateTime.Parse(r.GetString(4)).ToUniversalTime(),
+            CloseAtUtc = DateTime.Parse(r.GetString(5)).ToUniversalTime(),
+            Status = r.GetString(6),
+            PostChannelId = r.IsDBNull(7) ? null : ulong.Parse(r.GetString(7)),
+            ResultsMessageId = r.IsDBNull(8) ? null : ulong.Parse(r.GetString(8)),
+            HotTakes = r.IsDBNull(9) ? null : r.GetString(9),
+            InvitedCount = r.GetInt32(10),
+            RespondedCount = r.GetInt32(11)
+        };
+    }
+
+    public async Task<List<Survey>> GetAllSurveysAsync()
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, Title, Description, CreatedByUserId, CreatedUtc, CloseAtUtc, Status, PostChannelId, ResultsMessageId, HotTakes, InvitedCount, RespondedCount
+            FROM Surveys
+            ORDER BY CreatedUtc DESC";
+
+        var list = new List<Survey>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new Survey
+            {
+                Id = r.GetString(0),
+                Title = r.GetString(1),
+                Description = r.IsDBNull(2) ? null : r.GetString(2),
+                CreatedByUserId = ulong.Parse(r.GetString(3)),
+                CreatedUtc = DateTime.Parse(r.GetString(4)).ToUniversalTime(),
+                CloseAtUtc = DateTime.Parse(r.GetString(5)).ToUniversalTime(),
+                Status = r.GetString(6),
+                PostChannelId = r.IsDBNull(7) ? null : ulong.Parse(r.GetString(7)),
+                ResultsMessageId = r.IsDBNull(8) ? null : ulong.Parse(r.GetString(8)),
+                HotTakes = r.IsDBNull(9) ? null : r.GetString(9),
+                InvitedCount = r.GetInt32(10),
+                RespondedCount = r.GetInt32(11)
+            });
+        }
+
+        return list;
+    }
+
+    public async Task UpdateSurveyAsync(Survey survey)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE Surveys
+            SET Title = @t, Description = @d, Status = @s, PostChannelId = @pch, ResultsMessageId = @rmsg, HotTakes = @ht, InvitedCount = @inv, RespondedCount = @resp
+            WHERE Id = @id";
+        cmd.Parameters.AddWithValue("@id", survey.Id);
+        cmd.Parameters.AddWithValue("@t", survey.Title);
+        cmd.Parameters.AddWithValue("@d", (object?)survey.Description ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@s", survey.Status);
+        cmd.Parameters.AddWithValue("@pch", (object?)(survey.PostChannelId.HasValue ? survey.PostChannelId.Value.ToString() : null) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@rmsg", (object?)(survey.ResultsMessageId.HasValue ? survey.ResultsMessageId.Value.ToString() : null) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@ht", (object?)survey.HotTakes ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("@inv", survey.InvitedCount);
+        cmd.Parameters.AddWithValue("@resp", survey.RespondedCount);
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task<SurveyQuestion> CreateQuestionAsync(SurveyQuestion question)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO SurveyQuestions (Id, SurveyId, Order_Index, Text)
+            VALUES (@id, @sid, @o, @t)";
+        cmd.Parameters.AddWithValue("@id", question.Id);
+        cmd.Parameters.AddWithValue("@sid", question.SurveyId);
+        cmd.Parameters.AddWithValue("@o", question.Order);
+        cmd.Parameters.AddWithValue("@t", question.Text);
+
+        await cmd.ExecuteNonQueryAsync();
+        return question;
+    }
+
+    public async Task<List<SurveyQuestion>> GetQuestionsBySurveyAsync(string surveyId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, SurveyId, Order_Index, Text
+            FROM SurveyQuestions
+            WHERE SurveyId = @sid
+            ORDER BY Order_Index";
+        cmd.Parameters.AddWithValue("@sid", surveyId);
+
+        var list = new List<SurveyQuestion>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new SurveyQuestion
+            {
+                Id = r.GetString(0),
+                SurveyId = r.GetString(1),
+                Order = r.GetInt32(2),
+                Text = r.GetString(3)
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<SurveyOption> CreateOptionAsync(SurveyOption option)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO SurveyOptions (Id, QuestionId, Order_Index, Text, ResponseCount)
+            VALUES (@id, @qid, @o, @t, @rc)";
+        cmd.Parameters.AddWithValue("@id", option.Id);
+        cmd.Parameters.AddWithValue("@qid", option.QuestionId);
+        cmd.Parameters.AddWithValue("@o", option.Order);
+        cmd.Parameters.AddWithValue("@t", option.Text);
+        cmd.Parameters.AddWithValue("@rc", option.ResponseCount);
+
+        await cmd.ExecuteNonQueryAsync();
+        return option;
+    }
+
+    public async Task<List<SurveyOption>> GetOptionsByQuestionAsync(string questionId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, QuestionId, Order_Index, Text, ResponseCount
+            FROM SurveyOptions
+            WHERE QuestionId = @qid
+            ORDER BY Order_Index";
+        cmd.Parameters.AddWithValue("@qid", questionId);
+
+        var list = new List<SurveyOption>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new SurveyOption
+            {
+                Id = r.GetString(0),
+                QuestionId = r.GetString(1),
+                Order = r.GetInt32(2),
+                Text = r.GetString(3),
+                ResponseCount = r.GetInt32(4)
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<SurveyResponse> CreateResponseAsync(SurveyResponse response)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT OR REPLACE INTO SurveyResponses (Id, SurveyId, UserId, QuestionId, SelectedOptionId, SubmittedUtc)
+            VALUES (@id, @sid, @uid, @qid, @oid, @subm)";
+        cmd.Parameters.AddWithValue("@id", response.Id);
+        cmd.Parameters.AddWithValue("@sid", response.SurveyId);
+        cmd.Parameters.AddWithValue("@uid", response.UserId.ToString());
+        cmd.Parameters.AddWithValue("@qid", response.QuestionId);
+        cmd.Parameters.AddWithValue("@oid", response.SelectedOptionId);
+        cmd.Parameters.AddWithValue("@subm", response.SubmittedUtc.ToString("O"));
+
+        await cmd.ExecuteNonQueryAsync();
+
+        // Update option response count
+        await using var updateCmd = con.CreateCommand();
+        updateCmd.CommandText = @"
+            UPDATE SurveyOptions
+            SET ResponseCount = (
+                SELECT COUNT(*)
+                FROM SurveyResponses
+                WHERE SelectedOptionId = @oid
+            )
+            WHERE Id = @oid";
+        updateCmd.Parameters.AddWithValue("@oid", response.SelectedOptionId);
+        await updateCmd.ExecuteNonQueryAsync();
+
+        return response;
+    }
+
+    public async Task<SurveyResponse?> GetResponseAsync(string surveyId, ulong userId, string questionId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, SurveyId, UserId, QuestionId, SelectedOptionId, SubmittedUtc
+            FROM SurveyResponses
+            WHERE SurveyId = @sid AND UserId = @uid AND QuestionId = @qid";
+        cmd.Parameters.AddWithValue("@sid", surveyId);
+        cmd.Parameters.AddWithValue("@uid", userId.ToString());
+        cmd.Parameters.AddWithValue("@qid", questionId);
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+
+        return new SurveyResponse
+        {
+            Id = r.GetString(0),
+            SurveyId = r.GetString(1),
+            UserId = ulong.Parse(r.GetString(2)),
+            QuestionId = r.GetString(3),
+            SelectedOptionId = r.GetString(4),
+            SubmittedUtc = DateTime.Parse(r.GetString(5)).ToUniversalTime()
+        };
+    }
+
+    public async Task<List<SurveyResponse>> GetResponsesBySurveyAsync(string surveyId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, SurveyId, UserId, QuestionId, SelectedOptionId, SubmittedUtc
+            FROM SurveyResponses
+            WHERE SurveyId = @sid";
+        cmd.Parameters.AddWithValue("@sid", surveyId);
+
+        var list = new List<SurveyResponse>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new SurveyResponse
+            {
+                Id = r.GetString(0),
+                SurveyId = r.GetString(1),
+                UserId = ulong.Parse(r.GetString(2)),
+                QuestionId = r.GetString(3),
+                SelectedOptionId = r.GetString(4),
+                SubmittedUtc = DateTime.Parse(r.GetString(5)).ToUniversalTime()
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<SurveyFeedback?> CreateFeedbackAsync(SurveyFeedback feedback)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            INSERT OR REPLACE INTO SurveyFeedback (Id, SurveyId, UserId, FeedbackText, SubmittedUtc)
+            VALUES (@id, @sid, @uid, @txt, @subm)";
+        cmd.Parameters.AddWithValue("@id", feedback.Id);
+        cmd.Parameters.AddWithValue("@sid", feedback.SurveyId);
+        cmd.Parameters.AddWithValue("@uid", feedback.UserId.ToString());
+        cmd.Parameters.AddWithValue("@txt", feedback.FeedbackText);
+        cmd.Parameters.AddWithValue("@subm", feedback.SubmittedUtc.ToString("O"));
+
+        await cmd.ExecuteNonQueryAsync();
+        return feedback;
+    }
+
+    public async Task<List<SurveyFeedback>> GetFeedbackBySurveyAsync(string surveyId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, SurveyId, UserId, FeedbackText, SubmittedUtc
+            FROM SurveyFeedback
+            WHERE SurveyId = @sid";
+        cmd.Parameters.AddWithValue("@sid", surveyId);
+
+        var list = new List<SurveyFeedback>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(new SurveyFeedback
+            {
+                Id = r.GetString(0),
+                SurveyId = r.GetString(1),
+                UserId = ulong.Parse(r.GetString(2)),
+                FeedbackText = r.GetString(3),
+                SubmittedUtc = DateTime.Parse(r.GetString(4)).ToUniversalTime()
+            });
+        }
+
+        return list;
+    }
+
+    public async Task<List<ulong>> GetSurveyRespondersAsync(string surveyId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = @"
+            SELECT DISTINCT UserId
+            FROM SurveyResponses
+            WHERE SurveyId = @sid";
+        cmd.Parameters.AddWithValue("@sid", surveyId);
+
+        var list = new List<ulong>();
+        await using var r = await cmd.ExecuteReaderAsync();
+        while (await r.ReadAsync())
+        {
+            list.Add(ulong.Parse(r.GetString(0)));
+        }
+
+        return list;
+    }}

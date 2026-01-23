@@ -1,0 +1,120 @@
+@page "/survey-details/{id}"
+@model SurveyDetailsModel
+@{
+    ViewData["Title"] = Model.Survey?.Title ?? "Survey";
+}
+
+<div class="container mt-5">
+    @if (Model.Survey == null)
+    {
+        <div class="alert alert-danger">Survey not found.</div>
+    }
+    else
+    {
+        <h1>@Model.Survey.Title</h1>
+        
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <p><strong>Status:</strong> @Model.Survey.Status</p>
+                <p><strong>Created:</strong> <time datetime="@Model.Survey.CreatedUtc.ToString("O")">@Model.Survey.CreatedUtc.ToString("g")</time></p>
+                <p><strong>Closes:</strong> <time datetime="@Model.Survey.CloseAtUtc.ToString("O")">@Model.Survey.CloseAtUtc.ToString("g")</time></p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>Responses:</strong> @Model.Responders.Count / @Model.Survey.InvitedCount</p>
+                <p><strong>Response Rate:</strong> @(Model.Survey.InvitedCount > 0 ? Math.Round((Model.Responders.Count * 100.0 / Model.Survey.InvitedCount), 1) : 0)%</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Model.Survey.Description))
+        {
+            <div class="mb-4">
+                <p>@Model.Survey.Description</p>
+            </div>
+        }
+
+        <h3>Questions & Results</h3>
+        @foreach (var question in Model.Questions)
+        {
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">@question.Text</h5>
+                    @{
+                        var options = Model.OptionsByQuestion.ContainsKey(question.Id) ? Model.OptionsByQuestion[question.Id] : new List<SurveyOption>();
+                        var qResponses = Model.ResponsesByQuestion.ContainsKey(question.Id) ? Model.ResponsesByQuestion[question.Id] : new List<SurveyResponse>();
+                    }
+                    
+                    @if (qResponses.Count == 0)
+                    {
+                        <p class="text-muted">No responses yet.</p>
+                    }
+                    else
+                    {
+                        @foreach (var option in options.OrderByDescending(o => o.ResponseCount))
+                        {
+                            var count = option.ResponseCount;
+                            var pct = qResponses.Count > 0 ? (count * 100.0 / qResponses.Count) : 0;
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between">
+                                    <span>@option.Text</span>
+                                    <span>@count (@pct.ToString("F1")%)</span>
+                                </div>
+                                <div class="progress">
+                                    <div class="progress-bar" style="width: @(pct)%"></div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Model.Survey.HotTakes))
+        {
+            <div class="card bg-light mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">💡 Insights</h5>
+                </div>
+                <div class="card-body">
+                    <p>@Model.Survey.HotTakes</p>
+                </div>
+            </div>
+        }
+
+        @if (Model.Feedback.Count > 0)
+        {
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Anonymous Feedback (@Model.Feedback.Count)</h5>
+                </div>
+                <div class="card-body">
+                    @foreach (var fb in Model.Feedback)
+                    {
+                        <div class="mb-2 pb-2 border-bottom">
+                            <p>@fb.FeedbackText</p>
+                            <small class="text-muted"><time datetime="@fb.SubmittedUtc.ToString("O")">@fb.SubmittedUtc.ToString("g")</time></small>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="card bg-light">
+            <div class="card-header">
+                <h5 class="mb-0">Response Status</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Responded:</strong> @Model.Responders.Count members</p>
+                @if (Model.Survey.InvitedCount - Model.Responders.Count > 0)
+                {
+                    <p><strong>Pending:</strong> @(Model.Survey.InvitedCount - Model.Responders.Count) members</p>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    time {
+        white-space: nowrap;
+    }
+</style>

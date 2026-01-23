@@ -1,0 +1,67 @@
+@page "/surveys"
+@model SurveysModel
+@{
+    ViewData["Title"] = "Survey History";
+}
+
+<div class="container mt-5">
+    <h1>Survey History</h1>
+
+    @if (Model.Surveys.Count == 0)
+    {
+        <p class="text-muted">No surveys found.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Responses</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var survey in Model.Surveys)
+                    {
+                        <tr>
+                            <td>@survey.Title</td>
+                            <td>
+                                @if (survey.Status == "Open")
+                                {
+                                    <span class="badge bg-info">@survey.Status</span>
+                                }
+                                else if (survey.Status == "Results Posted")
+                                {
+                                    <span class="badge bg-success">@survey.Status</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">@survey.Status</span>
+                                }
+                            </td>
+                            <td>
+                                <time datetime="@survey.CreatedUtc.ToString("O")" title="@survey.CreatedUtc.ToString("g")">
+                                    @survey.CreatedUtc.ToString("MMM d, yyyy")
+                                </time>
+                            </td>
+                            <td>@Model.ResponseCounts[survey.Id]/@survey.InvitedCount</td>
+                            <td>
+                                <a href="/survey-details/@survey.Id" class="btn btn-sm btn-primary">View</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<style>
+    time {
+        white-space: nowrap;
+    }
+</style>

@@ -13,9 +13,9 @@ public sealed class AppSettingsService
     private const string KeyAnnounceHour = "Announcements.Hour";
     private const string KeyAnnounceMinute = "Announcements.Minute";
     private const string KeyAutoAdvanceMinutesAfterStart = "Scheduling.AutoAdvanceMinutesAfterStart";
-    private const string DiscordTokenKey = "discord.token";
-    private const string DiscordGuildKey = "discord.guildId";
-    private const string DiscordRegKey = "discord.registerToGuild";
+    private const string DiscordTokenKey = "Discord:Token";
+    private const string DiscordGuildKey = "Discord:GuildId";
+    private const string DiscordRegKey = "Discord:RegisterCommandsToGuild";
 
     private const string KeyAiProvider = "AI.Provider";          // openai | ollama | custom
     private const string KeyAiEndpoint = "AI.Endpoint";          // URL to chat completions API

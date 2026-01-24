@@ -41,6 +41,12 @@ public class SetupModel : PageModel
 
     public async Task OnGetAsync()
     {
+        if (TempData.ContainsKey("Message"))
+        {
+            Message = TempData["Message"]?.ToString();
+            MessageKind = TempData["MessageKind"]?.ToString() ?? "info";
+        }
+
         var (token, gid, reg) = await _settings.GetDiscordConfigAsync();
 
         HasToken = !string.IsNullOrWhiteSpace(token);
@@ -217,33 +223,26 @@ public class SetupModel : PageModel
         await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey, AiTemperature, AiMaxTokens);
         await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
-        Message = "AI and weather settings saved.";
-        MessageKind = "success";
+        TempData["Message"] = "AI and weather settings saved.";
+        TempData["MessageKind"] = "success";
 
-        AiApiKey = null;
-        await ReloadTokenFlagAsync();
-        await OnGetAsync();
-        return Page();
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostTestAiConnectionAsync()
     {
         if (string.IsNullOrWhiteSpace(AiEndpoint))
         {
-            Message = "Enter an endpoint URL first (e.g., http://localhost:11434/v1/chat/completions or https://api.openai.com/v1/chat/completions).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            await OnGetAsync();
-            return Page();
+            TempData["Message"] = "Enter an endpoint URL first (e.g., http://localhost:11434/v1/chat/completions or https://api.openai.com/v1/chat/completions).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         if (string.IsNullOrWhiteSpace(AiModel))
         {
-            Message = "Enter a model name first (e.g., llama3 or gpt-3.5-turbo).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            await OnGetAsync();
-            return Page();
+            TempData["Message"] = "Enter a model name first (e.g., llama3 or gpt-3.5-turbo).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         try
@@ -277,36 +276,33 @@ public class SetupModel : PageModel
 
             if (response.IsSuccessStatusCode)
             {
-                Message = $"✓ Successfully connected to {AiEndpoint} with model '{AiModel}'.";
-                MessageKind = "success";
+                TempData["Message"] = $"✓ Successfully connected to {AiEndpoint} with model '{AiModel}'.";
+                TempData["MessageKind"] = "success";
             }
             else
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                Message = $"API returned {response.StatusCode}: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}";
-                MessageKind = "danger";
+                TempData["Message"] = $"API returned {response.StatusCode}: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}";
+                TempData["MessageKind"] = "danger";
             }
         }
         catch (HttpRequestException hex)
         {
-            Message = $"Connection failed: {hex.Message}";
-            MessageKind = "danger";
+            TempData["Message"] = $"Connection failed: {hex.Message}";
+            TempData["MessageKind"] = "danger";
         }
         catch (TaskCanceledException)
         {
-            Message = "Request timed out (10 seconds). Check the endpoint URL and network connectivity.";
-            MessageKind = "danger";
+            TempData["Message"] = "Request timed out (10 seconds). Check the endpoint URL and network connectivity.";
+            TempData["MessageKind"] = "danger";
         }
         catch (Exception ex)
         {
-            Message = $"Test failed: {ex.Message}";
-            MessageKind = "danger";
+            TempData["Message"] = $"Test failed: {ex.Message}";
+            TempData["MessageKind"] = "danger";
         }
 
-        AiApiKey = null;
-        await ReloadTokenFlagAsync();
-        await OnGetAsync();
-        return Page();
+        return RedirectToPage();
     }
 
     private async Task ReloadTokenFlagAsync()

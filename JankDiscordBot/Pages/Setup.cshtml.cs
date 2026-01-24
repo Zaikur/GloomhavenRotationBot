@@ -97,8 +97,6 @@ public class SetupModel : PageModel
         await _settings.SaveDiscordConfigAsync(Token, gid, RegisterToGuild);
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
-        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey, AiTemperature, AiMaxTokens);
-        await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
         Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";

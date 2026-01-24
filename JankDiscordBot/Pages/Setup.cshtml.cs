@@ -27,6 +27,7 @@ public class SetupModel : PageModel
     [BindProperty] public string AiEndpoint { get; set; } = "";
     [BindProperty] public string AiModel { get; set; } = "";
     [BindProperty] public string? AiApiKey { get; set; }
+    [BindProperty] public bool ClearApiKey { get; set; }
     [BindProperty] public double? AiTemperature { get; set; }
     [BindProperty] public int? AiMaxTokens { get; set; }
 
@@ -220,7 +221,10 @@ public class SetupModel : PageModel
 
     public async Task<IActionResult> OnPostSaveAiAsync()
     {
-        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey, AiTemperature, AiMaxTokens);
+        // If user checked "Clear API key", explicitly save null/empty
+        var keyToSave = ClearApiKey ? "" : AiApiKey;
+        
+        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, keyToSave, AiTemperature, AiMaxTokens);
         await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
         TempData["Message"] = "AI and weather settings saved.";

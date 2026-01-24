@@ -135,10 +135,13 @@
                 <label class="form-label">API key (optional)</label>
                 <div class="input-group">
                     <input class="form-control" id="AiApiKeyInput" name="AiApiKey" type="password" value="" placeholder="Leave blank to keep existing" />
-                    <button class="btn btn-outline-secondary" type="button" id="toggleApiKey" title="Show/Hide">👁️</button>
                 </div>
                 @if (!string.IsNullOrWhiteSpace(Model.AiApiKey))
                 {
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" name="ClearApiKey" id="ClearApiKey" value="true" />
+                        <label class="form-check-label" for="ClearApiKey">Clear stored API key</label>
+                    </div>
                     <div class="form-text"><span style="color: #28a745;">✓ API key stored</span></div>
                 }
                 else

@@ -30,22 +30,32 @@ public sealed class AiTextService
 
         var endpoint = !string.IsNullOrWhiteSpace(endpointStored)
             ? endpointStored
-            : (_config["AI:Endpoint"] ?? _config["OpenAI:Endpoint"] ?? "https://api.openai.com/v1/chat/completions");
+            : _config["AI:Endpoint"];
 
         var model = !string.IsNullOrWhiteSpace(modelStored)
             ? modelStored
-            : (_config["AI:Model"] ?? _config["OpenAI:Model"] ?? "gpt-3.5-turbo");
+            : _config["AI:Model"];
 
         var apiKey = !string.IsNullOrWhiteSpace(keyStored)
             ? keyStored
-            : (_config["AI:ApiKey"] ?? _config["OpenAI:ApiKey"]);
+            : _config["AI:ApiKey"];
+
+        if (string.IsNullOrWhiteSpace(endpoint))
+        {
+            _log.LogWarning("AI endpoint not configured; returning fallback response");
+            return AppendErrorTag(fallback, "AI-E00"); // missing endpoint
+        }
+
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            _log.LogWarning("AI model not configured; returning fallback response");
+            return AppendErrorTag(fallback, "AI-E02"); // missing model
+        }
 
         var providerLabel = string.IsNullOrWhiteSpace(provider) ? "default" : provider;
 
-        // Some providers like may not require an API key
-        var requireKey = string.IsNullOrWhiteSpace(providerLabel)
-            ? true
-            : !providerLabel.Equals("ollama", StringComparison.OrdinalIgnoreCase);
+        // Some providers like ollama may not require an API key
+        var requireKey = !providerLabel.Equals("ollama", StringComparison.OrdinalIgnoreCase);
 
         if (requireKey && string.IsNullOrWhiteSpace(apiKey))
         {

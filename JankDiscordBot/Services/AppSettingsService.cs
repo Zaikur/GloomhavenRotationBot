@@ -142,24 +142,33 @@ public sealed class AppSettingsService
 
     public async Task<(string Token, ulong GuildId, bool RegisterToGuild)> GetDiscordConfigAsync()
     {
-        var tokenEncrypted = (await _repo.GetSettingAsync(DiscordTokenKey))?.Trim() ?? "";
+        var tokenRaw = (await _repo.GetSettingAsync(DiscordTokenKey))?.Trim() ?? "";
         var gidStr = (await _repo.GetSettingAsync(DiscordGuildKey))?.Trim() ?? "";
         var regStr = (await _repo.GetSettingAsync(DiscordRegKey))?.Trim() ?? "true";
 
         ulong.TryParse(gidStr, out var gid);
         var reg = regStr.Equals("true", StringComparison.OrdinalIgnoreCase) || regStr == "1";
 
-        // Decrypt token if it exists
+        // Check if token is encrypted (Data Protection prefix is "CfDJ8")
+        // If encrypted, decrypt it; otherwise use as-is (legacy plain text)
         string token = "";
-        if (!string.IsNullOrWhiteSpace(tokenEncrypted))
+        if (!string.IsNullOrWhiteSpace(tokenRaw))
         {
-            try
+            if (tokenRaw.StartsWith("CfDJ8", StringComparison.Ordinal))
             {
-                token = _protector.Unprotect(tokenEncrypted);
+                try
+                {
+                    token = _protector.Unprotect(tokenRaw);
+                }
+                catch (Exception ex)
+                {
+                    _log.LogWarning(ex, "Failed to decrypt Discord token");
+                }
             }
-            catch (Exception ex)
+            else
             {
-                _log.LogWarning(ex, "Failed to decrypt Discord token");
+                // Legacy plain text token
+                token = tokenRaw;
             }
         }
 

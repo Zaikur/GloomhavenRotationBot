@@ -142,12 +142,26 @@ public sealed class AppSettingsService
 
     public async Task<(string Token, ulong GuildId, bool RegisterToGuild)> GetDiscordConfigAsync()
     {
-        var token = (await _repo.GetSettingAsync(DiscordTokenKey))?.Trim() ?? "";
+        var tokenEncrypted = (await _repo.GetSettingAsync(DiscordTokenKey))?.Trim() ?? "";
         var gidStr = (await _repo.GetSettingAsync(DiscordGuildKey))?.Trim() ?? "";
         var regStr = (await _repo.GetSettingAsync(DiscordRegKey))?.Trim() ?? "true";
 
         ulong.TryParse(gidStr, out var gid);
         var reg = regStr.Equals("true", StringComparison.OrdinalIgnoreCase) || regStr == "1";
+
+        // Decrypt token if it exists
+        string token = "";
+        if (!string.IsNullOrWhiteSpace(tokenEncrypted))
+        {
+            try
+            {
+                token = _protector.Unprotect(tokenEncrypted);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "Failed to decrypt Discord token");
+            }
+        }
 
         return (token, gid, reg);
     }
@@ -157,9 +171,12 @@ public sealed class AppSettingsService
         await _repo.UpsertSettingAsync(DiscordGuildKey, guildId.ToString());
         await _repo.UpsertSettingAsync(DiscordRegKey, registerToGuild ? "true" : "false");
 
-        // only overwrite token if user supplied one
+        // Encrypt and store token if user supplied one
         if (!string.IsNullOrWhiteSpace(tokenPlain))
-            await _repo.UpsertSettingAsync(DiscordTokenKey, tokenPlain.Trim());
+        {
+            var encrypted = _protector.Protect(tokenPlain.Trim());
+            await _repo.UpsertSettingAsync(DiscordTokenKey, encrypted);
+        }
     }
 
     public async Task<bool> HasDiscordConfigAsync()

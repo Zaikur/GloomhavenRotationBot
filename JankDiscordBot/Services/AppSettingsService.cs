@@ -21,8 +21,6 @@ public sealed class AppSettingsService
     private const string KeyAiEndpoint = "AI.Endpoint";          // URL to chat completions API
     private const string KeyAiModel = "AI.Model";                // model name
     private const string KeyAiApiKey = "AI.ApiKey";              // optional
-    private const string KeyAiTemperature = "AI.Temperature";    // optional override
-    private const string KeyAiMaxTokens = "AI.MaxTokens";        // optional override
     private const string KeyWeatherLat = "Weather.Latitude";
     private const string KeyWeatherLon = "Weather.Longitude";
     private const string KeyWeatherUnits = "Weather.Units";      // imperial | metric
@@ -194,25 +192,17 @@ public sealed class AppSettingsService
         return !string.IsNullOrWhiteSpace(token) && guildId > 0;
     }
 
-    public async Task<(string Provider, string Endpoint, string Model, string ApiKey, double? Temperature, int? MaxTokens)> GetAiConfigAsync()
+    public async Task<(string Provider, string Endpoint, string Model, string ApiKey)> GetAiConfigAsync()
     {
         var provider = (await _repo.GetSettingAsync(KeyAiProvider)) ?? "";
         var endpoint = (await _repo.GetSettingAsync(KeyAiEndpoint)) ?? "";
         var model = (await _repo.GetSettingAsync(KeyAiModel)) ?? "";
         var apiKey = (await _repo.GetSettingAsync(KeyAiApiKey)) ?? "";
-        var tempStr = await _repo.GetSettingAsync(KeyAiTemperature);
-        var maxStr = await _repo.GetSettingAsync(KeyAiMaxTokens);
 
-        double? temp = null;
-        if (double.TryParse(tempStr, out var tParsed)) temp = tParsed;
-
-        int? max = null;
-        if (int.TryParse(maxStr, out var mParsed)) max = mParsed;
-
-        return (provider, endpoint, model, apiKey, temp, max);
+        return (provider, endpoint, model, apiKey);
     }
 
-    public async Task SaveAiConfigAsync(string provider, string endpoint, string model, string? apiKey, double? temperature = null, int? maxTokens = null)
+    public async Task SaveAiConfigAsync(string provider, string endpoint, string model, string? apiKey)
     {
         provider = string.IsNullOrWhiteSpace(provider) ? "" : provider.Trim();
         endpoint = string.IsNullOrWhiteSpace(endpoint) ? "" : endpoint.Trim();
@@ -221,11 +211,6 @@ public sealed class AppSettingsService
         await _repo.UpsertSettingAsync(KeyAiProvider, provider);
         await _repo.UpsertSettingAsync(KeyAiEndpoint, endpoint);
         await _repo.UpsertSettingAsync(KeyAiModel, model);
-
-        if (temperature.HasValue)
-            await _repo.UpsertSettingAsync(KeyAiTemperature, temperature.Value.ToString("0.###"));
-        if (maxTokens.HasValue)
-            await _repo.UpsertSettingAsync(KeyAiMaxTokens, Math.Max(1, maxTokens.Value).ToString());
 
         if (!string.IsNullOrWhiteSpace(apiKey))
             await _repo.UpsertSettingAsync(KeyAiApiKey, apiKey.Trim());

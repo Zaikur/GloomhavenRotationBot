@@ -123,12 +123,12 @@
 
             <div class="col-12">
                 <label class="form-label">Endpoint URL</label>
-                <input class="form-control" name="AiEndpoint" value="@Model.AiEndpoint" placeholder="https://api.openai.com/v1/chat/completions" />
+                <input class="form-control" name="AiEndpoint" value="@Model.AiEndpoint" />
             </div>
 
             <div class="col-12 col-md-6">
                 <label class="form-label">Model name</label>
-                <input class="form-control" name="AiModel" value="@Model.AiModel" placeholder="gpt-3.5-turbo or llama3" />
+                <input class="form-control" name="AiModel" value="@Model.AiModel" />
             </div>
 
             <div class="col-12 col-md-6">
@@ -139,13 +139,13 @@
 
             <div class="col-12 col-md-6">
                 <label class="form-label">Temperature (0.0 - 2.0)</label>
-                <input class="form-control" name="AiTemperature" type="number" step="0.05" min="0" max="2" value="@(Model.AiTemperature?.ToString("0.##"))" placeholder="0.5" />
+                <input class="form-control" name="AiTemperature" type="number" step="0.05" min="0" max="2" value="@(Model.AiTemperature?.ToString("0.##"))" />
                 <div class="form-text text-white-50">Leave blank to use the per-call default set by the feature (e.g., 0.35 for chat replies).</div>
             </div>
 
             <div class="col-12 col-md-6">
                 <label class="form-label">Max tokens</label>
-                <input class="form-control" name="AiMaxTokens" type="number" min="16" max="4000" value="@(Model.AiMaxTokens?.ToString())" placeholder="256" />
+                <input class="form-control" name="AiMaxTokens" type="number" min="16" max="4000" value="@(Model.AiMaxTokens?.ToString())" />
                 <div class="form-text text-white-50">Leave blank to use the per-call default.</div>
             </div>
 
@@ -160,11 +160,11 @@
 
             <div class="col-12 col-md-4">
                 <label class="form-label">Latitude</label>
-                <input class="form-control" name="WeatherLatitude" value="@Model.WeatherLatitude" placeholder="41.8781" />
+                <input class="form-control" name="WeatherLatitude" value="@Model.WeatherLatitude" />
             </div>
             <div class="col-12 col-md-4">
                 <label class="form-label">Longitude</label>
-                <input class="form-control" name="WeatherLongitude" value="@Model.WeatherLongitude" placeholder="-87.6298" />
+                <input class="form-control" name="WeatherLongitude" value="@Model.WeatherLongitude" />
             </div>
             <div class="col-12 col-md-4">
                 <label class="form-label">Units</label>

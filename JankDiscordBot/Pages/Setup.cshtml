@@ -113,7 +113,7 @@
         <h5 class="mb-1">AI responses</h5>
         <div class="text-white-50 small mb-3">Configure how the bot generates replies, announcements, and birthday wishes.</div>
 
-        <form method="post" asp-antiforgery="false" class="row g-3">
+        <form method="post" asp-antiforgery="false" class="row g-3" asp-page-handler="SaveAi">
             <div class="col-12 col-md-6">
                 <label class="form-label">Provider</label>
                 <select class="form-select" asp-for="AiProvider">

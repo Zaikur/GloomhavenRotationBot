@@ -77,41 +77,35 @@ public class SetupModel : PageModel
     {
         if (!ulong.TryParse(GuildId, out var gid) || gid == 0)
         {
-            Message = "GuildId must be a valid non-zero number.";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "GuildId must be a valid non-zero number.";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         ulong chId = 0;
         if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
             (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
         {
-            Message = "Announcement Channel ID must be a valid non-zero number (or leave it blank to disable announcements).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "Announcement Channel ID must be a valid non-zero number (or leave it blank to disable announcements).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         if (!TimeOnly.TryParse(AnnounceTime, out var t))
         {
-            Message = "Announcement time must be a valid time (HH:mm).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "Announcement time must be a valid time (HH:mm).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         await _settings.SaveDiscordConfigAsync(Token, gid, RegisterToGuild);
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
 
-        Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
-        MessageKind = "success";
+        TempData["Message"] = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
+        TempData["MessageKind"] = "success";
 
-        await ReloadTokenFlagAsync();
-        await OnGetAsync();
-
-        return Page();
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostTestAnnouncementAsync()
@@ -120,18 +114,16 @@ public class SetupModel : PageModel
         if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
             (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
         {
-            Message = "Announcement Channel ID must be a valid non-zero number (or leave blank to disable).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "Announcement Channel ID must be a valid non-zero number (or leave blank to disable).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         if (!TimeOnly.TryParse(AnnounceTime, out var t))
         {
-            Message = "Announcement time must be a valid time (HH:mm).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "Announcement time must be a valid time (HH:mm).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
@@ -145,21 +137,19 @@ public class SetupModel : PageModel
 
         var (ok, msg) = await _announcementSender.SendMorningAsync(today, dryRun: true);
 
-        Message = msg;
-        MessageKind = ok ? "success" : "warning";
+        TempData["Message"] = msg;
+        TempData["MessageKind"] = ok ? "success" : "warning";
 
-        await OnGetAsync();
-        return Page();
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostTestAsync()
     {
         if (!ulong.TryParse(GuildId, out var gid) || gid == 0)
         {
-            Message = "Enter a valid GuildId first.";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "Enter a valid GuildId first.";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         var (storedToken, _, _) = await _settings.GetDiscordConfigAsync();
@@ -167,10 +157,9 @@ public class SetupModel : PageModel
 
         if (string.IsNullOrWhiteSpace(tokenToTest))
         {
-            Message = "No token to test. Paste a token (or save one first).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
+            TempData["Message"] = "No token to test. Paste a token (or save one first).";
+            TempData["MessageKind"] = "warning";
+            return RedirectToPage();
         }
 
         try
@@ -183,8 +172,8 @@ public class SetupModel : PageModel
 
             if (guild == null)
             {
-                Message = "Token is valid, but the bot cannot access that GuildId. Is the bot invited to that server?";
-                MessageKind = "danger";
+                TempData["Message"] = "Token is valid, but the bot cannot access that GuildId. Is the bot invited to that server?";
+                TempData["MessageKind"] = "danger";
             }
             else
             {
@@ -193,26 +182,23 @@ public class SetupModel : PageModel
                     await _settings.SaveDiscordConfigAsync(tokenToTest, gid, RegisterToGuild);
                 }
 
-                Message = $"Success! Logged in as {me.Username} and can access guild {guild.Name} ({guild.Id})." +
+                TempData["Message"] = $"Success! Logged in as {me.Username} and can access guild {guild.Name} ({guild.Id})." +
                           (!string.IsNullOrWhiteSpace(Token) ? " Token saved." : "");
-                MessageKind = "success";
+                TempData["MessageKind"] = "success";
             }
         }
         catch (Discord.Net.HttpException hex)
         {
-            MessageKind = "danger";
-            Message = $"Discord API error: {hex.HttpCode} � {hex.Message}";
+            TempData["MessageKind"] = "danger";
+            TempData["Message"] = $"Discord API error: {hex.HttpCode} – {hex.Message}";
         }
         catch (Exception ex)
         {
-            MessageKind = "danger";
-            Message = $"Test failed: {ex.Message}";
+            TempData["MessageKind"] = "danger";
+            TempData["Message"] = $"Test failed: {ex.Message}";
         }
 
-        await ReloadTokenFlagAsync();
-        await OnGetAsync();
-
-        return Page();
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostSaveAiAsync()

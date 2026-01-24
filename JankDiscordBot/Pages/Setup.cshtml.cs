@@ -228,6 +228,89 @@ public class SetupModel : PageModel
         return Page();
     }
 
+    public async Task<IActionResult> OnPostTestAiConnectionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AiEndpoint))
+        {
+            Message = "Enter an endpoint URL first (e.g., http://localhost:11434/v1/chat/completions or https://api.openai.com/v1/chat/completions).";
+            MessageKind = "warning";
+            await ReloadTokenFlagAsync();
+            await OnGetAsync();
+            return Page();
+        }
+
+        if (string.IsNullOrWhiteSpace(AiModel))
+        {
+            Message = "Enter a model name first (e.g., llama3 or gpt-3.5-turbo).";
+            MessageKind = "warning";
+            await ReloadTokenFlagAsync();
+            await OnGetAsync();
+            return Page();
+        }
+
+        try
+        {
+            // Get stored API key if not provided in form
+            var (_, _, _, storedApiKey, _, _) = await _settings.GetAiConfigAsync();
+            var keyToTest = !string.IsNullOrWhiteSpace(AiApiKey) ? AiApiKey : storedApiKey;
+
+            // Make a simple test request
+            using var httpClient = new HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(10);
+
+            var payload = new
+            {
+                model = AiModel,
+                messages = new[] { new { role = "user", content = "Say 'OK' only." } },
+                max_tokens = 10
+            };
+
+            var content = new StringContent(
+                System.Text.Json.JsonSerializer.Serialize(payload),
+                System.Text.Encoding.UTF8,
+                "application/json");
+
+            if (!string.IsNullOrWhiteSpace(keyToTest))
+            {
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {keyToTest}");
+            }
+
+            var response = await httpClient.PostAsync(AiEndpoint, content);
+
+            if (response.IsSuccessStatusCode)
+            {
+                Message = $"✓ Successfully connected to {AiEndpoint} with model '{AiModel}'.";
+                MessageKind = "success";
+            }
+            else
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                Message = $"API returned {response.StatusCode}: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}";
+                MessageKind = "danger";
+            }
+        }
+        catch (HttpRequestException hex)
+        {
+            Message = $"Connection failed: {hex.Message}";
+            MessageKind = "danger";
+        }
+        catch (TaskCanceledException)
+        {
+            Message = "Request timed out (10 seconds). Check the endpoint URL and network connectivity.";
+            MessageKind = "danger";
+        }
+        catch (Exception ex)
+        {
+            Message = $"Test failed: {ex.Message}";
+            MessageKind = "danger";
+        }
+
+        AiApiKey = null;
+        await ReloadTokenFlagAsync();
+        await OnGetAsync();
+        return Page();
+    }
+
     private async Task ReloadTokenFlagAsync()
     {
         var (token, _, _) = await _settings.GetDiscordConfigAsync();

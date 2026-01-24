@@ -29,7 +29,7 @@
             <div class="alert alert-@Model.MessageKind mb-3">@Model.Message</div>
         }
 
-        <form method="post" asp-antiforgery="false" class="row g-3" asp-page-handler="SaveAi">
+        <form method="post" asp-antiforgery="false" class="row g-3">
             <div class="col-12">
                 <label class="form-label">Guild ID</label>
                 <input class="form-control" name="GuildId" value="@Model.GuildId" />
@@ -37,11 +37,15 @@
 
             <div class="col-12">
                 <label class="form-label">Bot Token</label>
-                <input class="form-control"
-                       name="Token"
-                       type="password"
-                       value=""
-                       placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
+                <div class="input-group">
+                    <input class="form-control"
+                           id="TokenInput"
+                           name="Token"
+                           type="password"
+                           value=""
+                           placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
+                    <button class="btn btn-outline-secondary" type="button" id="toggleToken" title="Show/Hide">👁️</button>
+                </div>
             </div>
 
             <div class="col-12 form-check">
@@ -133,8 +137,18 @@
 
             <div class="col-12 col-md-6">
                 <label class="form-label">API key (optional)</label>
-                <input class="form-control" name="AiApiKey" type="password" value="" placeholder="Leave blank to keep existing" />
-                <div class="form-text text-white-50">For Ollama/local models, leave blank.</div>
+                <div class="input-group">
+                    <input class="form-control" id="AiApiKeyInput" name="AiApiKey" type="password" value="" placeholder="Leave blank to keep existing" />
+                    <button class="btn btn-outline-secondary" type="button" id="toggleApiKey" title="Show/Hide">👁️</button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(Model.AiApiKey))
+                {
+                    <div class="form-text"><span style="color: #28a745;">✓ API key stored</span></div>
+                }
+                else
+                {
+                    <div class="form-text text-white-50">For Ollama/local models, leave blank.</div>
+                }
             </div>
 
             <div class="col-12 col-md-6">
@@ -149,14 +163,10 @@
                 <div class="form-text text-white-50">Leave blank to use the per-call default.</div>
             </div>
 
-            <div class="col-12 d-flex flex-wrap gap-2">
-                <button class="btn btn-primary" type="submit">Save AI settings</button>
-            </div>
+            <hr class="border-secondary" />
 
-        <hr class="border-secondary" />
-
-        <h6 class="mt-2 mb-1">Weather (for announcements and replies)</h6>
-        <div class="text-white-50 small mb-3">Optional: provide coordinates where this event is held. This defaults to the location used for morning announcements and as a fallback for members who haven't set their own location.</div>
+            <h6 class="mt-2 mb-1">Weather (for announcements and replies)</h6>
+            <div class="text-white-50 small mb-3">Optional: provide coordinates where this event is held. This defaults to the location used for morning announcements and as a fallback for members who haven't set their own location.</div>
 
             <div class="col-12 col-md-4">
                 <label class="form-label">Latitude</label>
@@ -173,10 +183,31 @@
                     <option value="metric">Metric (C)</option>
                 </select>
             </div>
+            <div class="col-12 text-white-50 small">Uses open-meteo.com (no API key required). Leave blank to disable.</div>
+
             <div class="col-12 d-flex flex-wrap gap-2">
-                <button class="btn btn-primary" type="submit">Save weather settings</button>
-                <div class="text-white-50 small">Uses open-meteo.com (no API key required). Leave blank to disable.</div>
+                <button class="btn btn-primary" type="submit">Save All Settings</button>
+                <button class="btn btn-outline-info" type="submit" asp-page-handler="TestAiConnection">Test AI Connection</button>
             </div>
         </form>
     </div>
 </div>
+
+<style>
+    #toggleApiKey,
+    #toggleToken {
+        border-left: 0;
+    }
+</style>
+
+<script>
+    document.getElementById('toggleApiKey').addEventListener('click', function() {
+        const input = document.getElementById('AiApiKeyInput');
+        input.type = input.type === 'password' ? 'text' : 'password';
+    });
+
+    document.getElementById('toggleToken').addEventListener('click', function() {
+        const input = document.getElementById('TokenInput');
+        input.type = input.type === 'password' ? 'text' : 'password';
+    });
+</script>

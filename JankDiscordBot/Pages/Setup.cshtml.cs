@@ -57,7 +57,7 @@ public class SetupModel : PageModel
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
 
-        var (provider, endpoint, model, apiKey, temp, maxTokens) = await _settings.GetAiConfigAsync();
+        var (provider, endpoint, model, apiKey) = await _settings.GetAiConfigAsync();
         AiProvider = provider;
         AiEndpoint = endpoint;
         AiModel = model;
@@ -199,7 +199,7 @@ public class SetupModel : PageModel
 
     public async Task<IActionResult> OnPostSaveAiAsync()
     {
-        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey, null, null);
+        await _settings.SaveAiConfigAsync(AiProvider, AiEndpoint, AiModel, AiApiKey);
         await _settings.SaveWeatherConfigAsync(WeatherLatitude, WeatherLongitude, WeatherUnits);
 
         TempData["Message"] = "AI and weather settings saved.";
@@ -227,7 +227,7 @@ public class SetupModel : PageModel
         try
         {
             // Get stored API key if not provided in form
-            var (_, _, _, storedApiKey, _, _) = await _settings.GetAiConfigAsync();
+            var (_, _, _, storedApiKey) = await _settings.GetAiConfigAsync();
             var keyToTest = !string.IsNullOrWhiteSpace(AiApiKey) ? AiApiKey : storedApiKey;
 
             // Make a simple test request

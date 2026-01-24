@@ -71,7 +71,7 @@ public sealed class ChatbotService
     /// </summary>
     public async Task<string> GenerateResponseAsync(string userMessage, ulong userId, string? username)
     {
-        var (_, endpoint, model, _, _, _) = await _settings.GetAiConfigAsync();
+        var (_, endpoint, model, _) = await _settings.GetAiConfigAsync();
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(model))
         {
             return "Not configured yet. Set provider, endpoint, and model on the Setup page.";

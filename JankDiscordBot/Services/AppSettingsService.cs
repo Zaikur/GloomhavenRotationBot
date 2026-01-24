@@ -142,9 +142,9 @@ public sealed class AppSettingsService
 
     public async Task<(string Token, ulong GuildId, bool RegisterToGuild)> GetDiscordConfigAsync()
     {
-        var token = (await _repo.GetSettingAsync("Discord:Token"))?.Trim() ?? "";
-        var gidStr = (await _repo.GetSettingAsync("Discord:GuildId"))?.Trim() ?? "";
-        var regStr = (await _repo.GetSettingAsync("Discord:RegisterCommandsToGuild"))?.Trim() ?? "true";
+        var token = (await _repo.GetSettingAsync(DiscordTokenKey))?.Trim() ?? "";
+        var gidStr = (await _repo.GetSettingAsync(DiscordGuildKey))?.Trim() ?? "";
+        var regStr = (await _repo.GetSettingAsync(DiscordRegKey))?.Trim() ?? "true";
 
         ulong.TryParse(gidStr, out var gid);
         var reg = regStr.Equals("true", StringComparison.OrdinalIgnoreCase) || regStr == "1";
@@ -154,12 +154,12 @@ public sealed class AppSettingsService
 
     public async Task SaveDiscordConfigAsync(string? tokenPlain, ulong guildId, bool registerToGuild)
     {
-        await _repo.UpsertSettingAsync("Discord:GuildId", guildId.ToString());
-        await _repo.UpsertSettingAsync("Discord:RegisterCommandsToGuild", registerToGuild ? "true" : "false");
+        await _repo.UpsertSettingAsync(DiscordGuildKey, guildId.ToString());
+        await _repo.UpsertSettingAsync(DiscordRegKey, registerToGuild ? "true" : "false");
 
         // only overwrite token if user supplied one
         if (!string.IsNullOrWhiteSpace(tokenPlain))
-            await _repo.UpsertSettingAsync("Discord:Token", tokenPlain.Trim());
+            await _repo.UpsertSettingAsync(DiscordTokenKey, tokenPlain.Trim());
     }
 
     public async Task<bool> HasDiscordConfigAsync()

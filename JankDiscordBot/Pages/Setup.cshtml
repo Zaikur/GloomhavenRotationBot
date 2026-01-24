@@ -37,15 +37,11 @@
 
             <div class="col-12">
                 <label class="form-label">Bot Token</label>
-                <div class="input-group">
-                    <input class="form-control"
-                           id="TokenInput"
-                           name="Token"
-                           type="password"
-                           value=""
-                           placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
-                    <button class="btn btn-outline-secondary" type="button" id="toggleToken" title="Show/Hide">👁️</button>
-                </div>
+                <input class="form-control"
+                       name="Token"
+                       type="password"
+                       value=""
+                       placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
             </div>
 
             <div class="col-12 form-check">
@@ -194,8 +190,7 @@
 </div>
 
 <style>
-    #toggleApiKey,
-    #toggleToken {
+    #toggleApiKey {
         border-left: 0;
     }
 </style>
@@ -203,11 +198,6 @@
 <script>
     document.getElementById('toggleApiKey').addEventListener('click', function() {
         const input = document.getElementById('AiApiKeyInput');
-        input.type = input.type === 'password' ? 'text' : 'password';
-    });
-
-    document.getElementById('toggleToken').addEventListener('click', function() {
-        const input = document.getElementById('TokenInput');
         input.type = input.type === 'password' ? 'text' : 'password';
     });
 </script>

@@ -149,9 +149,6 @@ public sealed class AppSettingsService
         ulong.TryParse(gidStr, out var gid);
         var reg = regStr.Equals("true", StringComparison.OrdinalIgnoreCase) || regStr == "1";
 
-        if (token.StartsWith("CfDJ8", StringComparison.Ordinal))
-            token = "";
-
         return (token, gid, reg);
     }
 

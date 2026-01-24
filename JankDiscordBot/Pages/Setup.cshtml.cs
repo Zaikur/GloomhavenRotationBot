@@ -50,6 +50,7 @@ public class SetupModel : PageModel
         var (token, gid, reg) = await _settings.GetDiscordConfigAsync();
 
         HasToken = !string.IsNullOrWhiteSpace(token);
+        Token = token; // Load actual token
         GuildId = gid == 0 ? "" : gid.ToString();
         RegisterToGuild = reg;
         var (ch, h, m) = await _settings.GetAnnouncementConfigAsync();
@@ -107,9 +108,7 @@ public class SetupModel : PageModel
         Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";
 
-        Token = null; // never echo back
         await ReloadTokenFlagAsync();
-
         await OnGetAsync();
 
         return Page();
@@ -209,11 +208,9 @@ public class SetupModel : PageModel
             MessageKind = "danger";
             Message = $"Test failed: {ex.Message}";
         }
-        finally
-        {
-            Token = null; // never echo
-            await ReloadTokenFlagAsync();
-        }
+
+        await ReloadTokenFlagAsync();
+        await OnGetAsync();
 
         return Page();
     }

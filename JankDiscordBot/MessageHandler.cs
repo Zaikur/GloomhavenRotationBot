@@ -49,6 +49,13 @@ public sealed class MessageHandler
             var content = msg.Content?.Trim();
             if (string.IsNullOrWhiteSpace(content)) return;
 
+            // Check for bang (!) commands first - these don't require bot mention
+            if (content.StartsWith('!'))
+            {
+                await HandleBangCommandAsync(msg, content);
+                return;
+            }
+
             // Only respond when the bot is explicitly mentioned
             var botMentioned = msg.MentionedUsers.Any(u => u.Id == _client.CurrentUser.Id);
             if (!botMentioned) return;
@@ -155,5 +162,45 @@ public sealed class MessageHandler
         {
             _logger.LogError(ex, "Error handling message from {User}", msg.Author?.Username ?? "Unknown");
         }
+    }
+
+    private async Task HandleBangCommandAsync(SocketMessage msg, string content)
+    {
+        try
+        {
+            var command = content.ToLowerInvariant().Split(' ')[0];
+
+            switch (command)
+            {
+                case "!nextsession":
+                    var sessionResponse = await _chatbot.GetNextSessionResponseAsync();
+                    if (sessionResponse != null)
+                    {
+                        await msg.Channel.SendMessageAsync(sessionResponse);
+                        _logger.LogInformation("Responded to !nextsession from {User}", msg.Author.Username);
+                    }
+                    break;
+
+                case "!itsmybirthday":
+                    var birthdayResponse = GetBirthdayResponse(msg.Author.Username);
+                    await msg.Channel.SendMessageAsync(birthdayResponse);
+                    _logger.LogInformation("Responded to !itsmybirthday from {User}", msg.Author.Username);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error handling bang command from {User}", msg.Author?.Username ?? "Unknown");
+        }
+    }
+
+    private static string GetBirthdayResponse(string username)
+    {
+        if (username.Equals("mrsrobinson", StringComparison.OrdinalIgnoreCase))
+        {
+            return "It's not your birthday, try again later.";
+        }
+
+        return $"🎉🎂 Happy Birthday, {username}! 🎂🎉";
     }
 }

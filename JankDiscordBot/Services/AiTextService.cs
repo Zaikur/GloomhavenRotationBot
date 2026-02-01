@@ -78,6 +78,8 @@ public sealed class AiTextService
             };
 
             var json = JsonSerializer.Serialize(payload);
+            _log.LogInformation("Sending AI request to {Endpoint} with model {Model}", endpoint, model);
+
             using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
@@ -85,16 +87,23 @@ public sealed class AiTextService
             if (!string.IsNullOrWhiteSpace(apiKey))
                 req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
-            using var res = await _http.SendAsync(req, ct);
+            // Create a timeout-aware cancellation token (90 seconds for slower models)
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, cts.Token);
+
+            _log.LogInformation("Waiting for AI response...");
+            using var res = await _http.SendAsync(req, linkedCts.Token);
+            
             if (!res.IsSuccessStatusCode)
             {
-                var body = await res.Content.ReadAsStringAsync(ct);
+                var body = await res.Content.ReadAsStringAsync(linkedCts.Token);
                 _log.LogWarning("AI request failed: {Status} {Body}", res.StatusCode, body);
                 return AppendErrorTag(fallback, "AI-E02"); // HTTP failure
             }
 
-            using var stream = await res.Content.ReadAsStreamAsync(ct);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            _log.LogInformation("Received AI response with status {Status}", res.StatusCode);
+            using var stream = await res.Content.ReadAsStreamAsync(linkedCts.Token);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: linkedCts.Token);
 
             var content = doc.RootElement
                 .GetProperty("choices")[0]
@@ -105,6 +114,11 @@ public sealed class AiTextService
             return string.IsNullOrWhiteSpace(content)
                 ? AppendErrorTag(fallback, "AI-E04") // empty content
                 : content!.Trim();
+        }
+        catch (OperationCanceledException ex)
+        {
+            _log.LogError(ex, "AI request timed out after 90 seconds; returning fallback");
+            return AppendErrorTag(fallback, "AI-E05"); // timeout
         }
         catch (Exception ex)
         {

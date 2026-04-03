@@ -89,6 +89,19 @@
                 <div class="form-text text-white-50">Example: 60 means advance one hour after start.</div>
             </div>
 
+            <hr class="border-secondary" />
+
+            <h5 class="mb-1">Bang commands</h5>
+            <div class="text-white-50 small mb-3">
+                One-off command behavior and reset controls.
+            </div>
+
+            <div class="col-12 form-check">
+                <input class="form-check-input" type="checkbox" name="ResetPurposePromptHistory" value="true" @(Model.ResetPurposePromptHistory ? "checked" : "") />
+                <label class="form-check-label">Reset the one-off “What’s my purpose?” prompt history when saving</label>
+                <div class="form-text text-white-50">Check this once, click Save, then leave it unchecked until you want to allow that prompt to happen again.</div>
+            </div>
+
             <div class="col-12 d-flex flex-wrap gap-2">
                 <button class="btn btn-primary" type="submit">Save</button>
 

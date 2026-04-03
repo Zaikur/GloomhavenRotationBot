@@ -22,6 +22,7 @@ public class SetupModel : PageModel
     [BindProperty] public string AnnounceChannelId { get; set; } = "";
     [BindProperty] public string AnnounceTime { get; set; } = "09:00"; // "HH:mm"
     [BindProperty] public int AutoAdvanceMinutesAfterStart { get; set; } = 60;
+    [BindProperty] public bool ResetPurposePromptHistory { get; set; }
 
 
     public bool HasToken { get; private set; }
@@ -74,10 +75,16 @@ public class SetupModel : PageModel
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
 
-        Message = "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
+        if (ResetPurposePromptHistory)
+            await _settings.ResetPurposePromptSeenAsync();
+
+        Message = ResetPurposePromptHistory
+            ? "Saved. The bot will connect (or reconnect) automatically within a few seconds. Purpose prompt history was reset."
+            : "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";
 
         Token = null; // never echo back
+        ResetPurposePromptHistory = false;
         await ReloadTokenFlagAsync();
 
         await OnGetAsync();
@@ -172,7 +179,7 @@ public class SetupModel : PageModel
         catch (Discord.Net.HttpException hex)
         {
             MessageKind = "danger";
-            Message = $"Discord API error: {hex.HttpCode} — {hex.Message}";
+            Message = $"Discord API error: {hex.HttpCode} ï¿½ {hex.Message}";
         }
         catch (Exception ex)
         {

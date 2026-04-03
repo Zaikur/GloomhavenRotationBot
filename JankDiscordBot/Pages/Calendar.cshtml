@@ -2,6 +2,67 @@
 @model CalendarModel
 
 <style>
+    .gh-calendar-scroll {
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+    }
+
+    .gh-calendar {
+        width: max-content;
+        min-width: max-content;
+        margin: 0 auto;
+    }
+
+    .gh-calendar-header,
+    .gh-calendar-week {
+        display: grid;
+        grid-template-columns: repeat(7, 8.5rem);
+        gap: 0.5rem;
+    }
+
+    .gh-calendar-header {
+        margin-bottom: 0.5rem;
+        padding-inline: 0.25rem;
+    }
+
+    .gh-calendar-header-cell {
+        text-align: left;
+    }
+
+    .gh-calendar-week + .gh-calendar-week {
+        margin-top: 0.5rem;
+    }
+
+    .gh-day {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        height: 9.5rem;
+        padding: 0.5rem;
+        overflow: hidden;
+        border-color: rgba(255,255,255,.12) !important;
+        background: rgba(255,255,255,.03);
+    }
+
+    .gh-day-outside-month {
+        background: rgba(255,255,255,.01);
+    }
+
+    .gh-day-body {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .gh-session-list {
+        display: grid;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        overflow: auto;
+        padding-right: 0.125rem;
+    }
+
     .gh-overlay {
         position: fixed;
         inset: 0;
@@ -58,6 +119,13 @@
 
     .gh-cross::before { transform: rotate(45deg); }
     .gh-cross::after { transform: rotate(-45deg); }
+
+    @@media (max-width: 576px) {
+        .gh-calendar-scroll {
+            margin-inline: -0.25rem;
+            padding-inline: 0.25rem;
+        }
+    }
 </style>
 @{
     var monthLabel = Model.MonthFirst.ToDateTime(new TimeOnly(0, 0)).ToString("MMMM yyyy");
@@ -80,87 +148,98 @@
 
 <div class="card shadow-sm">
     <div class="card-body p-2 p-md-3">
-        <div class="row g-2 text-white-50 small mb-2 px-1">
-            <div class="col">Mon</div><div class="col">Tue</div><div class="col">Wed</div><div class="col">Thu</div><div class="col">Fri</div><div class="col">Sat</div><div class="col">Sun</div>
-        </div>
+        <div class="gh-calendar-scroll">
+            <div class="gh-calendar">
+                <div class="gh-calendar-header text-white-50 small">
+                    <div class="gh-calendar-header-cell">Mon</div>
+                    <div class="gh-calendar-header-cell">Tue</div>
+                    <div class="gh-calendar-header-cell">Wed</div>
+                    <div class="gh-calendar-header-cell">Thu</div>
+                    <div class="gh-calendar-header-cell">Fri</div>
+                    <div class="gh-calendar-header-cell">Sat</div>
+                    <div class="gh-calendar-header-cell">Sun</div>
+                </div>
 
-        @for (int week = 0; week < 6; week++)
-        {
-            <div class="row g-2 mb-2">
-                @for (int dow = 0; dow < 7; dow++)
+                @for (int week = 0; week < 6; week++)
                 {
-                    var day = Model.GridDays[week * 7 + dow];
-                    var inMonth = day.Month == Model.MonthFirst.Month;
-                    Model.SessionsByDay.TryGetValue(day, out var sessions);
+                    <div class="gh-calendar-week">
+                        @for (int dow = 0; dow < 7; dow++)
+                        {
+                            var day = Model.GridDays[week * 7 + dow];
+                            var inMonth = day.Month == Model.MonthFirst.Month;
+                            Model.SessionsByDay.TryGetValue(day, out var sessions);
 
-                    <div class="col">
-                        @{ var isToday = day == Model.TodayLocal; var isPast = day < Model.TodayLocal; }
-                        <div class="border rounded-3 p-2 @(isToday ? "gh-today" : "") @(isPast ? "gh-past" : "")" style="position:relative; min-height: 120px; border-color: rgba(255,255,255,.12) !important; background: @(inMonth ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.01)")">
-                            <div class="d-flex align-items-center justify-content-between">
-                                <div class="fw-semibold @(inMonth ? "" : "text-white-50")">@day.Day</div>
-                            </div>
-                            @if(isPast){ <div class="gh-cross" aria-hidden="true"></div> }
+                            var isToday = day == Model.TodayLocal;
+                            var isPast = day < Model.TodayLocal;
+                            <div class="gh-day border rounded-3 @(isToday ? "gh-today" : "") @(isPast ? "gh-past" : "") @(inMonth ? string.Empty : "gh-day-outside-month")">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="fw-semibold @(inMonth ? "" : "text-white-50")">@day.Day</div>
+                                </div>
+                                @if(isPast){ <div class="gh-cross" aria-hidden="true"></div> }
 
-                            @if (sessions != null && sessions.Count > 0)
-                            {
-                                <div class="mt-2 d-grid gap-2">
-                                    @foreach (var s in sessions)
+                                <div class="gh-day-body">
+                                    @if (sessions != null && sessions.Count > 0)
                                     {
-                                        var cancelled = s.IsCancelled;
-                                        var badge = cancelled ? "bg-danger" : "bg-success";
-                                        var time = s.EffectiveStartLocal.ToString("h:mm tt");
-                                        var moved = s.OriginalDateLocal != DateOnly.FromDateTime(s.EffectiveStartLocal);
+                                        <div class="gh-session-list">
+                                            @foreach (var s in sessions)
+                                            {
+                                                var cancelled = s.IsCancelled;
+                                                var badge = cancelled ? "bg-danger" : "bg-success";
+                                                var time = s.EffectiveStartLocal.ToString("h:mm tt");
+                                                var moved = s.OriginalDateLocal != DateOnly.FromDateTime(s.EffectiveStartLocal);
 
-                                        var sessionIsPast = DateOnly.FromDateTime(s.EffectiveStartLocal) < Model.TodayLocal;
+                                                var sessionIsPast = DateOnly.FromDateTime(s.EffectiveStartLocal) < Model.TodayLocal;
 
-                                        // DM/Food assignment: future = current index, past = previous index (heuristic)
-                                        string dmText = "_(not set)_";
-                                        string foodText = "_(not set)_";
+                                                // DM/Food assignment: future = current index, past = previous index (heuristic)
+                                                string dmText = "_(not set)_";
+                                                string foodText = "_(not set)_";
 
-                                        if (Model.DmRotation.Members.Count > 0)
-                                        {
-                                            var dmCount = Model.DmRotation.Members.Count;
-                                            var dmIndex = (Model.DmRotation.Index + (sessionIsPast ? -1 : 0)) % dmCount;
-                                            if (dmIndex < 0) dmIndex += dmCount;
-                                            dmText = Model.GetMemberName(Model.DmRotation.Members[dmIndex]);
-                                        }
-
-                                        if (Model.FoodRotation.Members.Count > 0)
-                                        {
-                                            var fCount = Model.FoodRotation.Members.Count;
-                                            var fIndex = (Model.FoodRotation.Index + (sessionIsPast ? -1 : 0)) % fCount;
-                                            if (fIndex < 0) fIndex += fCount;
-                                            foodText = Model.GetMemberName(Model.FoodRotation.Members[fIndex]);
-                                        }
-
-                                        <a class="btn btn-sm btn-outline-light text-start @(cancelled ? "text-danger" : "")"
-                                           href="/Calendar?year=@Model.MonthFirst.Year&month=@Model.MonthFirst.Month&edit=@s.OriginalDateLocal.ToString("yyyy-MM-dd")">
-                                            <div class="d-flex align-items-center justify-content-between">
-                                                <span class="badge @badge me-2">@time</span>
-                                                <span class="text-white-50 small">@((moved) ? "moved" : "")</span>
-                                            </div>
-                                            <div class="small mt-1">
-                                                Occurrence: @s.OriginalDateLocal.ToString("MMM d")
-                                                @if (!string.IsNullOrWhiteSpace(s.Note))
+                                                if (Model.DmRotation.Members.Count > 0)
                                                 {
-                                                    <div class="text-white-50">@s.Note</div>
+                                                    var dmCount = Model.DmRotation.Members.Count;
+                                                    var dmIndex = (Model.DmRotation.Index + (sessionIsPast ? -1 : 0)) % dmCount;
+                                                    if (dmIndex < 0) dmIndex += dmCount;
+                                                    dmText = Model.GetMemberName(Model.DmRotation.Members[dmIndex]);
                                                 }
 
-                                                
-                                            </div>
-                                        </a>
+                                                if (Model.FoodRotation.Members.Count > 0)
+                                                {
+                                                    var fCount = Model.FoodRotation.Members.Count;
+                                                    var fIndex = (Model.FoodRotation.Index + (sessionIsPast ? -1 : 0)) % fCount;
+                                                    if (fIndex < 0) fIndex += fCount;
+                                                    foodText = Model.GetMemberName(Model.FoodRotation.Members[fIndex]);
+                                                }
+
+                                                <a class="btn btn-sm btn-outline-light text-start @(cancelled ? "text-danger" : "")"
+                                                   href="/Calendar?year=@Model.MonthFirst.Year&month=@Model.MonthFirst.Month&edit=@s.OriginalDateLocal.ToString("yyyy-MM-dd")">
+                                                    <div class="d-flex align-items-center justify-content-between">
+                                                        <span class="badge @badge me-2">@time</span>
+                                                        <span class="text-white-50 small">@((moved) ? "moved" : "")</span>
+                                                    </div>
+                                                    <div class="small mt-1">
+                                                        Occurrence: @s.OriginalDateLocal.ToString("MMM d")
+                                                        @if (!string.IsNullOrWhiteSpace(s.Note))
+                                                        {
+                                                            <div class="text-white-50">@s.Note</div>
+                                                        }
+
+                                                        
+                                                    </div>
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+                                    else if (inMonth)
+                                    {
+                                        <div class="text-white-50 small mt-2">—</div>
                                     }
                                 </div>
-                            }
-                            else if (inMonth)
-                            {
-                                <div class="text-white-50 small mt-2">—</div>
-                            }
-                        </div>
+                            </div>
+                        }
                     </div>
                 }
             </div>
-        }
+        </div>
     </div>
 </div>
 

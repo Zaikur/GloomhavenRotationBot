@@ -13,6 +13,7 @@ public sealed class AppSettingsService
     private const string KeyAnnounceHour = "Announcements.Hour";
     private const string KeyAnnounceMinute = "Announcements.Minute";
     private const string KeyAutoAdvanceMinutesAfterStart = "Scheduling.AutoAdvanceMinutesAfterStart";
+    private const string KeyPurposePromptSeenUsers = "Bang.PurposePromptSeenUsers";
     private const string DiscordTokenKey = "discord.token";
     private const string DiscordGuildKey = "discord.guildId";
     private const string DiscordRegKey = "discord.registerToGuild";
@@ -123,6 +124,26 @@ public sealed class AppSettingsService
         await _repo.UpsertSettingAsync(KeyAutoAdvanceMinutesAfterStart, minutes.ToString());
     }
 
+    public async Task<bool> HasSeenPurposePromptAsync(ulong userId)
+    {
+        var users = await GetPurposePromptSeenUsersAsync();
+        return users.Contains(userId);
+    }
+
+    public async Task MarkPurposePromptSeenAsync(ulong userId)
+    {
+        var users = await GetPurposePromptSeenUsersAsync();
+        if (!users.Add(userId))
+            return;
+
+        await SavePurposePromptSeenUsersAsync(users);
+    }
+
+    public async Task ResetPurposePromptSeenAsync()
+    {
+        await _repo.UpsertSettingAsync(KeyPurposePromptSeenUsers, string.Empty);
+    }
+
     public async Task SaveAnnouncementConfigAsync(ulong channelId, int hour, int minute)
     {
         await _repo.UpsertSettingAsync(KeyAnnounceChannelId, channelId == 0 ? "" : channelId.ToString());
@@ -159,5 +180,28 @@ public sealed class AppSettingsService
     {
         var (token, guildId, _) = await GetDiscordConfigAsync();
         return !string.IsNullOrWhiteSpace(token) && guildId > 0;
+    }
+
+    private async Task<HashSet<ulong>> GetPurposePromptSeenUsersAsync()
+    {
+        var raw = await _repo.GetSettingAsync(KeyPurposePromptSeenUsers);
+        var users = new HashSet<ulong>();
+
+        if (string.IsNullOrWhiteSpace(raw))
+            return users;
+
+        foreach (var value in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (ulong.TryParse(value, out var userId))
+                users.Add(userId);
+        }
+
+        return users;
+    }
+
+    private async Task SavePurposePromptSeenUsersAsync(HashSet<ulong> users)
+    {
+        var serialized = string.Join(',', users.OrderBy(id => id));
+        await _repo.UpsertSettingAsync(KeyPurposePromptSeenUsers, serialized);
     }
 }

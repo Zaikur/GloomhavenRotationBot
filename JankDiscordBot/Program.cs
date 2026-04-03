@@ -41,6 +41,7 @@ builder.Services.AddSingleton<AppSettingsService>();
 builder.Services.AddSingleton<BotStatusService>();
 builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<AnnouncementSender>();
+builder.Services.AddSingleton<BangResponseService>();
 builder.Services.AddSingleton<ChatbotService>();
 builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();

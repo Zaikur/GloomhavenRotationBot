@@ -393,6 +393,24 @@ public sealed class BotRepository
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<(int Month, int Day, int? LastSentYear)?> GetBirthdayAsync(ulong userId)
+    {
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var cmd = con.CreateCommand();
+        cmd.CommandText = "SELECT Month, Day, LastSentYear FROM Birthdays WHERE UserId = @id";
+        cmd.Parameters.AddWithValue("@id", userId.ToString());
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        if (!await r.ReadAsync()) return null;
+
+        var month = r.GetInt32(0);
+        var day = r.GetInt32(1);
+        int? lastSentYear = r.IsDBNull(2) ? null : r.GetInt32(2);
+        return (month, day, lastSentYear);
+    }
+
     public async Task<List<(ulong UserId, int Month, int Day, int? LastSentYear)>> GetAllBirthdaysAsync()
     {
         await using var con = Open();

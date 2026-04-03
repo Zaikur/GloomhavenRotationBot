@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using Discord;
 using Discord.WebSocket;
 using GloomhavenRotationBot.Services;
 using Microsoft.Extensions.Logging;
@@ -9,18 +11,26 @@ namespace GloomhavenRotationBot;
 /// </summary>
 public sealed class MessageHandler
 {
+    private static readonly TimeSpan PurposePromptLifetime = TimeSpan.FromMinutes(10);
+
     private readonly DiscordSocketClient _client;
+    private readonly BangResponseService _bangResponses;
     private readonly ChatbotService _chatbot;
     private readonly AppSettingsService _settings;
     private readonly ILogger<MessageHandler> _logger;
+    private readonly ConcurrentDictionary<ulong, PendingPurposePrompt> _pendingPurposePrompts = new();
+
+    private sealed record PendingPurposePrompt(ulong ChannelId, DateTime ExpiresUtc);
 
     public MessageHandler(
         DiscordSocketClient client,
+        BangResponseService bangResponses,
         ChatbotService chatbot,
         AppSettingsService settings,
         ILogger<MessageHandler> logger)
     {
         _client = client;
+        _bangResponses = bangResponses;
         _chatbot = chatbot;
         _settings = settings;
         _logger = logger;
@@ -48,6 +58,9 @@ public sealed class MessageHandler
 
             var content = msg.Content?.Trim();
             if (string.IsNullOrWhiteSpace(content)) return;
+
+            if (await HandlePendingPurposeReplyAsync(msg, content))
+                return;
 
             // Check for bang (!) commands first - these don't require bot mention
             if (content.StartsWith('!'))
@@ -168,7 +181,8 @@ public sealed class MessageHandler
     {
         try
         {
-            var command = content.ToLowerInvariant().Split(' ')[0];
+            var commandToken = content.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0];
+            var command = commandToken.ToLowerInvariant();
 
             switch (command)
             {
@@ -177,14 +191,36 @@ public sealed class MessageHandler
                     if (sessionResponse != null)
                     {
                         await msg.Channel.SendMessageAsync(sessionResponse);
+                        await MaybeAskPurposeQuestionAsync(msg);
                         _logger.LogInformation("Responded to !nextsession from {User}", msg.Author.Username);
                     }
                     break;
 
                 case "!itsmybirthday":
-                    var birthdayResponse = GetBirthdayResponse(msg.Author.Username);
+                    var birthdayResponse = await _bangResponses.GetBirthdayResponseAsync(msg.Author.Id, msg.Author.Username);
                     await msg.Channel.SendMessageAsync(birthdayResponse);
+                    await MaybeAskPurposeQuestionAsync(msg);
                     _logger.LogInformation("Responded to !itsmybirthday from {User}", msg.Author.Username);
+                    break;
+
+                case "!beans":
+                    var beansResponse = _bangResponses.GetBeansResponse();
+                    await ReplyToMessageAsync(msg, beansResponse);
+                    await MaybeAskPurposeQuestionAsync(msg);
+                    _logger.LogInformation("Responded to !beans from {User}", msg.Author.Username);
+                    break;
+
+                default:
+                    var topicResponse = _bangResponses.GetGenericBangResponse(commandToken);
+                    if (topicResponse == null)
+                    {
+                        _logger.LogInformation("Ignored bang command {Command} from {User}", commandToken, msg.Author.Username);
+                        break;
+                    }
+
+                    await ReplyToMessageAsync(msg, topicResponse);
+                    await MaybeAskPurposeQuestionAsync(msg);
+                    _logger.LogInformation("Responded to bang command {Command} from {User}", commandToken, msg.Author.Username);
                     break;
             }
         }
@@ -194,13 +230,52 @@ public sealed class MessageHandler
         }
     }
 
-    private static string GetBirthdayResponse(string username)
+    private static async Task ReplyToMessageAsync(SocketMessage msg, string response)
     {
-        if (username.Equals("mrsrobinson", StringComparison.OrdinalIgnoreCase))
+        await msg.Channel.SendMessageAsync(response, messageReference: new MessageReference(msg.Id));
+    }
+
+    private async Task MaybeAskPurposeQuestionAsync(SocketMessage msg)
+    {
+        if (await _settings.HasSeenPurposePromptAsync(msg.Author.Id))
+            return;
+
+        if (!_bangResponses.ShouldAskPurposeQuestion())
+            return;
+
+        if (_pendingPurposePrompts.TryGetValue(msg.Author.Id, out var pending))
         {
-            return "It's not your birthday, try again later.";
+            if (pending.ExpiresUtc > DateTime.UtcNow)
+                return;
+
+            _pendingPurposePrompts.TryRemove(msg.Author.Id, out _);
         }
 
-        return $"🎉🎂 Happy Birthday, {username}! 🎂🎉";
+        _pendingPurposePrompts[msg.Author.Id] = new PendingPurposePrompt(msg.Channel.Id, DateTime.UtcNow.Add(PurposePromptLifetime));
+        await _settings.MarkPurposePromptSeenAsync(msg.Author.Id);
+        await ReplyToMessageAsync(msg, _bangResponses.GetPurposeQuestion());
+    }
+
+    private async Task<bool> HandlePendingPurposeReplyAsync(SocketMessage msg, string content)
+    {
+        if (!_pendingPurposePrompts.TryGetValue(msg.Author.Id, out var pending))
+            return false;
+
+        if (pending.ExpiresUtc <= DateTime.UtcNow)
+        {
+            _pendingPurposePrompts.TryRemove(msg.Author.Id, out _);
+            return false;
+        }
+
+        if (pending.ChannelId != msg.Channel.Id)
+            return false;
+
+        if (!_bangResponses.LooksLikePurposeAnswer(content))
+            return false;
+
+        _pendingPurposePrompts.TryRemove(msg.Author.Id, out _);
+        await ReplyToMessageAsync(msg, _bangResponses.GetPurposeCrisisResponse());
+        _logger.LogInformation("Responded to purpose answer from {User}", msg.Author.Username);
+        return true;
     }
 }

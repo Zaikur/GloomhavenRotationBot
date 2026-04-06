@@ -80,12 +80,13 @@ public sealed class BangResponseService
         "Has {0} always been your thing, or did you warm up to it over time?",
         "Was {0} an immediate win for you, or was it more of an acquired taste situation?",
         "Did {0} click right away for you, or did it grow on you?",
+        "Have you always been a {0} kinda guy?",
         "Were you into {0} from the start, or was that a journey?",
         "Was {0} always in your corner, or did you need time to appreciate it?"
     };
 
     private static readonly Regex PurposeAnswerPattern = new(
-        @"^\s*(you\b|you're\b|you are\b|to\b|your purpose is\b)",
+        @"(?:^\s*|[.!?][\""'”’)\]]*\s+)(you\b|you're\b|you are\b|to\b|your purpose is\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private readonly BotRepository _repo;

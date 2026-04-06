@@ -71,6 +71,15 @@ public sealed class MessageHandler
 
             // Only respond when the bot is explicitly mentioned
             var botMentioned = msg.MentionedUsers.Any(u => u.Id == _client.CurrentUser.Id);
+
+            if (_bangResponses.LooksLikeBotInsult(content, _client.CurrentUser.Id, _client.CurrentUser.Username))
+            {
+                var insultResponse = _bangResponses.GetBotInsultResponse();
+                await ReplyToMessageAsync(msg, insultResponse);
+                _logger.LogInformation("Responded to directed insult from {User}", msg.Author.Username);
+                return;
+            }
+
             if (!botMentioned) return;
 
             // Don't respond if chatbot is paused

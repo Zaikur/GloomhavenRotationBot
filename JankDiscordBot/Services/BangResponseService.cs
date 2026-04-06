@@ -10,34 +10,34 @@ public sealed class BangResponseService
 
     private static readonly string[] BirthdayDayResponses =
     {
-        "🎉🎂 Happy Birthday, {0}! 🎂🎉",
-        "Cake alarm: it is apparently {0}'s birthday. Happy birthday.",
-        "A birthday has been detected. Happy birthday, {0}.",
-        "Happy birthday, {0}. Please accept this extremely official celebration."
+        "🎉🎂 Happy Birthday, {0}! It is officially the big day! 🎂🎉",
+        "🚨🎂 Cake alarm: it is officially {0}'s birthday! Everybody remain appropriately hyped! 🎉",
+        "📣 It is {0}'s actual birthday today! This is not a drill! 🥳🎈",
+        "🎈 Happy birthday, {0}!!!!! 🎉✨"
     };
 
     private static readonly string[] BirthdayWeekResponses =
     {
-        "Happy birthday week, {0}! That is much closer to a real birthday, so congratulations.",
-        "We are officially in {0}'s birthday week. This is a strong development.",
-        "Happy birthday week, {0}. The countdown is now serious.",
-        "It is your birthday week, {0}, and that feels worth celebrating early."
+        "🎉 Happy birthday week, {0}! The countdown is on. 🎂",
+        "🥳 We are officially in {0}'s birthday week, and that deserves some excitement.",
+        "Happy birthday week, {0}! 🎈 Your big day is getting close.",
+        "✨ It is your birthday week, {0}, so early celebration mode is now active. ✨"
     };
 
     private static readonly string[] BirthdayMonthResponses =
     {
-        "Apparently it is your birthday month, {0}. Fine. Happy birthday month.",
-        "I have been informed that {0} is in their birthday month. Congrats, I guess.",
-        "Happy birthday month, {0}. This seems excessive, but here we are.",
-        "It is technically your birthday month, {0}, so accept this begrudging recognition."
+        "🗓️ Apparently it is your birthday month, {0}. Fine. Happy birthday month. 🎉",
+        "🥳 I have been informed that {0} is in their birthday month. Congrats, I guess. 🎈",
+        "🎉 Happy birthday month, {0}. This seems excessive, but here we are. ✨",
+        "🎂 It is technically your birthday month, {0}, so accept this begrudging recognition."
     };
 
     private static readonly string[] NotActuallyBirthdayResponses =
     {
-        "It's not your birthday, try again later.",
-        "Nice try, but the birthday council says no.",
-        "Your birthday claim has been rejected. Please resubmit in one year.",
-        "No, you cannot have a birthday year-round. That's just not how they work."
+        "🚫🎂 It's not your birthday, try again later.",
+        "🙅 Nice try, but the birthday council says no.",
+        "📅 Your birthday claim has been rejected. Please resubmit in one year.",
+        "❌ No, you cannot have a birthday year-round. That's just not how they work."
     };
 
     private static readonly string[] BeanFacts =
@@ -76,13 +76,22 @@ public sealed class BangResponseService
 
     private static readonly string[] BangTopicResponses =
     {
-        "Have you always liked {0}, or was it an acquired taste?",
-        "Has {0} always been your thing, or did you warm up to it over time?",
-        "Was {0} an immediate win for you, or was it more of an acquired taste situation?",
-        "Did {0} click right away for you, or did it grow on you?",
-        "Have you always been a {0} kinda guy?",
-        "Were you into {0} from the start, or was that a journey?",
-        "Was {0} always in your corner, or did you need time to appreciate it?"
+        "🤔 Have you always liked {0}, or was it an acquired taste?",
+        "😄 Has {0} always been your thing, or did you warm up to it over time?",
+        "👀 Was {0} an immediate win for you, or was it more of an acquired taste situation?",
+        "✨ Did {0} click right away for you, or did it grow on you?",
+        "😎 Have you always been a {0} kinda guy?",
+        "🎢 Were you into {0} from the start, or was that a journey?",
+        "🫡 Was {0} always in your corner, or did you need time to appreciate it?"
+    };
+
+    private static readonly string[] BotInsultResponses =
+    {
+        "You're not really my type.",
+        "If this is flirting, your technique needs work.",
+        "That would've hurt more if it had any craftsmanship.",
+        "Strong words from somebody arguing with a rotation bot.",
+        "You came in loud, but not especially effective."
     };
 
     private static readonly Regex PurposeAnswerPattern = new(
@@ -125,7 +134,7 @@ public sealed class BangResponseService
 
     public string GetBeansResponse()
     {
-        return Pick(BeanFacts);
+        return $"🫘 {Pick(BeanFacts)}";
     }
 
     public string? GetGenericBangResponse(string commandToken)
@@ -146,12 +155,31 @@ public sealed class BangResponseService
 
     public string GetPurposeQuestion()
     {
-        return "What's my purpose?";
+        return "What's my purpose? 🤖";
     }
 
     public bool LooksLikePurposeAnswer(string content)
     {
         return !string.IsNullOrWhiteSpace(content) && PurposeAnswerPattern.IsMatch(content);
+    }
+
+    public bool LooksLikeBotInsult(string content, ulong botUserId, string botUsername)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        var targetPattern = BuildBotTargetPattern(botUserId, botUsername);
+        var insultPattern =
+            $@"(?:\b(?:fuck\s+you|fuck\s+off|screw\s+you)\b[\s\p{{P}}]*(?:{targetPattern})|(?:{targetPattern})[\s\p{{P}}]*\b(?:fuck\s+you|fuck\s+off|screw\s+you)\b)";
+
+        return Regex.IsMatch(content, insultPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    public string GetBotInsultResponse()
+    {
+        return Pick(BotInsultResponses);
     }
 
     public string GetPurposeCrisisResponse()
@@ -162,6 +190,37 @@ public sealed class BangResponseService
     private static string Pick(string[] options)
     {
         return options[Random.Shared.Next(options.Length)];
+    }
+
+    private static string BuildBotTargetPattern(ulong botUserId, string botUsername)
+    {
+        var patterns = new List<string>
+        {
+            $@"<@!?{botUserId}>",
+            @"\bglom\b"
+        };
+
+        var usernamePattern = BuildNamePattern(botUsername);
+        if (!string.IsNullOrWhiteSpace(usernamePattern) && !patterns.Contains(usernamePattern, StringComparer.Ordinal))
+        {
+            patterns.Add(usernamePattern);
+        }
+
+        return string.Join("|", patterns);
+    }
+
+    private static string? BuildNamePattern(string value)
+    {
+        var tokens = Regex.Matches(value, @"[\p{L}\p{N}]+", RegexOptions.CultureInvariant)
+            .Select(match => Regex.Escape(match.Value))
+            .ToArray();
+
+        if (tokens.Length == 0)
+        {
+            return null;
+        }
+
+        return $@"\b{string.Join(@"[\s\p{P}]*", tokens)}\b";
     }
 
     private static string? HumanizeBangCommand(string commandToken)

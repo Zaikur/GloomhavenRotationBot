@@ -1,5 +1,14 @@
 # GloomhavenRotationBot
 
+Let's call this an experiment in vibe coding. A discord bot you can self host to keep track of your Gloomhaven members, who's turn it is to DM, who is responsible for food, birthdays for some reason, a few slash commands, and random !bang commands my party members keep requesting. One day maybe I'll get around to integrating a tiny LLM to respond appropriately.
+
+This app was vibe coded as fast as possible with the absolute minimum of checks (vibe coded might be too strong of a term, zombie coded?), and refined to the point that the secrets aren't stored in the repository, and the UI looks ok if you squint really hard <sub><sup><sup>don't even think about mobile</sup></sup></sub>. Beyond that, I promise nothing.
+
+Right here is where human contribution to this project ends.
+
+
+
+
 A self-hosted Discord bot + local Web UI for managing a Gloomhaven group:
 
 - Tracks **who’s up next** for **DM** and **Food**

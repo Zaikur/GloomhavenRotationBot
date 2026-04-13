@@ -25,88 +25,134 @@ Everything is stored in a local SQLite database on a mounted volume.
 
 ## Features
 
-### Discord Commands (ephemeral / private)
-Commands respond privately (ephemeral), so channels don't get spammed:
-- `/who` - Show who's up next for DM or Food
-- `/skip` - Swap your turn with the next person
-- `/advance` - Manually advance the rotation (DM, Food, or both)
-- `/chatbot` - Pause/resume chatbot auto-responses
+### Rotation, schedule, and automation
 
-### Chatbot Responses
-The bot listens to messages in your guild and automatically responds when someone asks about upcoming sessions. Works with natural language like:
-- "Are we doing this tonight?"
-- "Is Gloomhaven happening today?"
-- "When's the next session?"
-- "Is it cancelled?"
+- Tracks who is up next for DM and Food
+- Lets you reorder rosters and set the current DM/Food member from the web UI
+- Supports a weekly or monthly recurring session rule with timezone, interval, weekday, time, and monthly-week settings
+- Maintains a session calendar with per-occurrence cancel, move, and note overrides
+- Sends a morning announcement to a configured Discord channel on session days
+- Auto-advances DM and Food after the session start time plus a configurable grace period
+- Stores birthdays and sends birthday announcements automatically once per year
+- Exposes a status page and a simple `/health` endpoint
 
-The bot will reply with the next session's date, time, cancellation status, and current DM/Food assignments.
+### Slash commands
 
-**Control the chatbot:**
-- `/chatbot pause 60` - Pause auto-responses for 60 minutes
-- `/chatbot resume` - Resume immediately
-- `/chatbot status` - Check if paused and time remaining
+Slash commands respond ephemerally so channels do not get spammed.
 
-### Web UI (LAN only)
-A local web UI for setup and maintenance:
+- `/who dm`
+- `/who food`
+- `/advance dm`
+- `/advance food`
+- `/advance all`
+- `/chatbot pause [minutes]`
+- `/chatbot resume`
+- `/chatbot status`
 
-- Setup: Discord token, guild id, register-to-guild toggle
-- Announcements: target channel id + time + “Test morning announcement”
-- Auto-advance: minutes after start
-- Schedule: weekly/monthly recurrence rule (weekday + time, interval, etc.)
-- Calendar: month view with “today” highlight and an overlay editor to cancel/move/note
-- Rosters: manage DM and Food member ordering
+### Mention chatbot
 
----
+Mention the bot in a message to get natural-language answers about:
+
+- whether the next session is happening
+- when the next session is
+- who is DM
+- whether you are DM
+- who is bringing food
+- whether you are bringing food
+- whether the next session is cancelled and why
+- simple greetings and thank-yous
+
+The bot only responds in the configured guild. Bang commands are the exception to the "mention me" rule, but they still only work in that configured guild.
+
+### Bang commands and other nonsense
+
+Bang commands do not require a bot mention.
+
+Special cases:
+
+- `!nextsession` returns the same next-session summary as the chatbot
+- `!itsmybirthday` checks the birthday stored for your Discord user and responds differently for birthday day, birthday week, birthday month, or "no"
+- `!beans` returns a random bean fact
+
+Generic bang behavior:
+
+- most other `!whatever` commands get humanized into a topic and answered with a short snarky line
+- commands with no useful letters are ignored
+- after a successful bang response, the bot may ask a one-off `What's my purpose?` follow-up
+- if the same user answers that prompt in the same channel within 10 minutes, the bot replies with an existential crisis message
+- the purpose prompt is only meant to happen once per user unless you reset that history in Setup
+- directly insulting the bot can also get a response
+
+### Birthdays
+
+- Birthdays are managed from the Rosters page and stored by Discord user ID
+- `!itsmybirthday` uses the stored date and the app's local timezone
+- A background service checks birthdays daily at 9:00 local time
+- Birthday announcements go to the same announcement channel used for morning session posts
+- Automated birthday posts are deduplicated with a per-user last-sent-year value
+
+### Web UI
+
+The LAN-only admin UI includes:
+
+- Status: Discord runtime state and connection details
+- Setup: guild ID, bot token, announcement channel/time, auto-advance delay, token test, morning announcement test, and bang prompt reset
+- Rosters: DM/Food ordering, current member selection, and birthday storage
+- Schedule: timezone-aware weekly/monthly recurrence configuration
+- Calendar: month view with cancel, move, and note overrides for individual occurrences
 
 ## Tech Stack
 
 - .NET 8
-- ASP.NET Core Razor Pages (Web UI)
+- ASP.NET Core Razor Pages
 - Discord.Net (Socket + Interactions)
-- SQLite (local persistence)
+- SQLite
 - Docker image published to GHCR
 
----
-
-## Setup (Discord)
+## Discord Setup
 
 1. Create an application in the Discord Developer Portal.
-2. Add a **Bot** to the application.
-3. Enable these **Privileged Gateway Intents**:
-   - **Server Members Intent** (required for user ID selection in webUI)
-   - **Message Content Intent** (required for chatbot to read messages)
-4. Invite the bot to your server (guild) with scopes:
+2. Add a bot user to the application.
+3. Enable these privileged gateway intents:
+   - Server Members Intent
+   - Message Content Intent
+4. Invite the bot to your server with these scopes:
    - `applications.commands`
    - `bot`
-   
-   Bot Permissions:
+5. Give the bot at least these permissions:
    - `Send Messages`
    - `View Channels`
    - `Read Message History`
 
----
+Notes:
 
-## Running Locally (Visual Studio)
+- Server Members Intent is required for the Rosters page and birthday management.
+- Message Content Intent is required for mention-based chatbot replies and `!bang` commands.
+- Slash commands currently register globally in the running app, so Discord may take a few minutes to show new or updated commands.
 
-1. Open the solution in Visual Studio.
-2. Run the project.
-3. Open the Web UI:
-   - `http://localhost:5055` (or whatever port you configured)
-4. Go to **Setup**:
-   - Enter Guild ID
-   - Paste bot token
-   - Set announcement channel/time (optional)
-   - Save
-5. The bot will connect shortly after saving.
+## Running Locally
 
-> Token is stored in the local SQLite DB (not in user-secrets).
+1. Build the solution:
 
----
+```bash
+dotnet build GloomhavenRotationBot.sln
+```
 
-## Docker / TrueNAS SCALE (recommended)
+2. Run the app:
+
+```bash
+dotnet run --project JankDiscordBot
+```
+
+3. Open the web UI at `http://localhost:5055`.
+4. Go to Setup and save your Guild ID and bot token.
+5. Configure Schedule, Rosters, and optional announcements.
+
+The bot monitors the saved SQLite settings and reconnects automatically after you save changes.
+
+## Docker / TrueNAS SCALE
 
 ### Container Image
-Images are published to GitHub Container Registry (GHCR):
 
 - `ghcr.io/zaikur/gloomhavenrotationbot:latest`
 
@@ -125,61 +171,81 @@ services:
       - "5055:5055"
     restart: unless-stopped
     volumes:
-      - /mnt/pathTo/YourAppDirectory
+      - /mnt/pathTo/YourAppDirectory:/app/data
 ```
-## Accessing the Web UI
 
-After deploying, open:
+The default database path is `data/app.db`, so mounting `/app/data` preserves your SQLite file across container restarts.
 
-- `http://<ip>:5055`
+### Accessing the Web UI
 
-## Updating on TrueNAS
+After deploying, open one of these from the same machine or your private network:
 
-TrueNAS **Custom Apps** do **not** auto-update when `:latest` changes. To pull new changes:
+- `http://localhost:5055`
+- `http://<private-lan-ip>:5055`
 
-- **Edit** the app and click **Save** (redeploy)
+The app rejects public or non-private source IPs by design.
+
+### Updating on TrueNAS
+
+TrueNAS Custom Apps do not auto-update when `:latest` changes. To pull new changes:
+
+- Edit the app and click Save to redeploy it
 
 With `pull_policy: always`, the image will be pulled during redeploy.
 
-## Data & Persistence
+## Data and Persistence
 
-The bot stores its state in **SQLite** under the mounted volume.
+The bot stores its state in SQLite.
 
 ### Things stored
-- Discord config (encrypted token + guild id)
-- Announcement config (channel id + time)
-- Schedule recurrence rule
-- Session overrides (cancel/move/note)
-- Rotation rosters (DM/Food) and current index
-- “Already announced” markers (to prevent double morning announcements)
+
+- Discord settings: bot token, guild ID, and command-registration preference
+- Announcement settings: channel ID and time
+- Auto-advance setting: minutes after session start
+- Schedule rule: timezone, frequency, interval, day of week, time, monthly week, and anchor date
+- Rotation rosters: DM/Food member order and current index
+- Session overrides: cancelled flag, moved date/time, and per-session note
+- Session markers: whether an occurrence was already announced or auto-advanced, plus timestamps
+- Birthdays: month, day, and the last year an automated birthday message was sent
+- Bang-command state: the list of users who have already seen the one-off purpose prompt
 
 ### To migrate or reset
-- Stop the container
-- Backup or delete the SQLite file under the mounted volume
-- Restart
+
+- Stop the app or container
+- Back up or delete the SQLite database file
+- Start the app or container again
+
+In the default container layout, the database lives under `/app/data/app.db`.
 
 ## Common Troubleshooting
 
-### “Missing Access” / command registration errors
-- Ensure the bot is in the guild and has permissions.
-- Ensure `GuildId` is correct.
-- If registering commands to a guild, the bot must be able to access that guild.
+### Slash commands are missing
 
-### Announcements don’t send
-- Announcement Channel ID must be a real channel in the guild.
-- Bot needs permission to send messages to that channel.
-- Bot must be connected (token/guild saved).
-- Use **Test morning announcement** from Setup to validate.
+- Make sure the bot was invited with the `applications.commands` scope.
+- Give Discord a little time. Commands currently register globally, not guild-only.
 
-### Web UI not reachable in Docker
+### Mention chatbot or bang commands do not respond
+
+- Make sure Message Content Intent is enabled.
+- Make sure the message is being sent in the configured guild.
+- Mention the bot for natural-language questions. Only `!bang` commands work without a mention.
+- Confirm the bot can read the target channel.
+
+### Rosters page shows no guild members
+
+- Make sure Server Members Intent is enabled.
+- Make sure the bot is connected and the Guild ID is correct.
+
+### Announcements or birthday posts do not send
+
+- Set a real announcement channel ID in Setup.
+- Make sure the bot can send messages to that channel.
+- Birthday posts use the same announcement channel as morning session announcements.
+- Use Test morning announcement from Setup to validate the channel.
+
+### Web UI is not reachable in Docker
+
 - Confirm `ASPNETCORE_URLS=http://0.0.0.0:5055`
-- Confirm container port is mapped: `5055:5055`
+- Confirm the port mapping is `5055:5055`
+- Confirm you are connecting from localhost or a private LAN IP
 - Confirm host firewall rules
-
-## Development Notes
-- Prefer publishing versioned tags (sha/semver) for predictable deployments.
-- Slash commands should be ephemeral to reduce spam.
-- Schedule recurrence rule drives:
-  - Calendar generation
-  - Morning announcements
-  - Auto-advance behavior

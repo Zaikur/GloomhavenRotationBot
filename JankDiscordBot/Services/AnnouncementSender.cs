@@ -50,16 +50,9 @@ public sealed class AnnouncementSender
 
     public async Task<(bool Ok, string Message)> SendMorningAsync(DateOnly localDate, bool dryRun, CancellationToken ct = default)
     {
-        var (channelId, _, _) = await _settings.GetAnnouncementConfigAsync();
-        if (channelId == 0)
-            return (false, "Announcement channel is not set.");
-
-        if (_client.ConnectionState != ConnectionState.Connected)
-            return (false, "Discord client is not connected yet (token/guild not ready).");
-
-        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        var (channel, error) = await ResolveAnnouncementChannelAsync();
         if (channel == null)
-            return (false, "Announcement channel could not be found (check Channel ID).");
+            return (false, error!);
 
         var sessions = await _schedule.GetSessionsOccurringOnDateAsync(localDate);
         if (sessions.Count == 0 && !dryRun)
@@ -108,16 +101,9 @@ public sealed class AnnouncementSender
 
     public async Task<(bool Ok, string Message)> SendBirthdayAsync(ulong userId, string displayName, DateOnly localDate, bool dryRun = false, CancellationToken ct = default)
     {
-        var (channelId, _, _) = await _settings.GetAnnouncementConfigAsync();
-        if (channelId == 0)
-            return (false, "Announcement channel is not set.");
-
-        if (_client.ConnectionState != ConnectionState.Connected)
-            return (false, "Discord client is not connected yet (token/guild not ready).");
-
-        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        var (channel, error) = await ResolveAnnouncementChannelAsync();
         if (channel == null)
-            return (false, "Announcement channel could not be found (check Channel ID).");
+            return (false, error!);
 
         var message = BuildBirthdayMessage(displayName, localDate);
         await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
@@ -125,11 +111,43 @@ public sealed class AnnouncementSender
         return (true, "Sent birthday message.");
     }
 
+    public async Task<(bool Ok, string Message)> SendCustomMessageAsync(string message, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return (false, "Message cannot be empty.");
+
+        if (message.Length > 2000)
+            return (false, "Discord only accepts messages up to 2000 characters.");
+
+        var (channel, error) = await ResolveAnnouncementChannelAsync();
+        if (channel == null)
+            return (false, error!);
+
+        await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
+        return (true, "Sent custom message as GLOM.");
+    }
+
     private string BuildBirthdayMessage(string displayName, DateOnly localDate)
     {
         var template = BirthdayMessages[_random.Next(BirthdayMessages.Length)];
         var message = string.Format(template, displayName);
         return $"{message}\n🗓️ **{localDate:dddd, MMM d}** · From all of us at the Gloomhaven table.";
+    }
+
+    private async Task<(IMessageChannel? Channel, string? Error)> ResolveAnnouncementChannelAsync()
+    {
+        var (channelId, _, _) = await _settings.GetAnnouncementConfigAsync();
+        if (channelId == 0)
+            return (null, "Announcement channel is not set.");
+
+        if (_client.ConnectionState != ConnectionState.Connected)
+            return (null, "Discord client is not connected yet (token/guild not ready).");
+
+        var channel = _client.GetChannel(channelId) as IMessageChannel;
+        if (channel == null)
+            return (null, "Announcement channel could not be found (check Channel ID).");
+
+        return (channel, null);
     }
 
     private async Task<string> BuildMessageForSessionAsync(SessionInfo s, CancellationToken ct)

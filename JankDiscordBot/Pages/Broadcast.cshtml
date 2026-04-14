@@ -1,0 +1,55 @@
+@page
+@model BroadcastModel
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h2 class="m-0">Broadcast</h2>
+        <div class="text-white-50">Send a one-off Discord message through GLOM</div>
+    </div>
+    <div class="text-white-50 small text-md-end">
+        <div>Bot state: <span class="badge text-bg-secondary">@Model.BotState</span></div>
+        <div>
+            Announcement channel:
+            @if (Model.AnnouncementChannelId == 0)
+            {
+                <span class="text-warning">not configured</span>
+            }
+            else
+            {
+                <code>@Model.AnnouncementChannelId</code>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        @if (!string.IsNullOrWhiteSpace(Model.ResultMessage))
+        {
+            <div class="alert alert-@Model.ResultKind mb-3">@Model.ResultMessage</div>
+        }
+
+        <div class="text-white-50 mb-3">
+            The text below is sent without rewriting. Discord markdown, emoji syntax, mentions, and line breaks will be posted as entered.
+        </div>
+
+        <form method="post" asp-antiforgery="false" class="row g-3">
+            <div class="col-12">
+                <label class="form-label" for="MessageText">Message</label>
+                <textarea class="form-control font-monospace"
+                          id="MessageText"
+                          name="MessageText"
+                          rows="10"
+                          maxlength="2000"
+                          spellcheck="false"
+                          placeholder="Type the exact message GLOM should send...">@Model.MessageText</textarea>
+                <div class="form-text text-white-50">Discord's normal 2000-character message limit still applies.</div>
+            </div>
+
+            <div class="col-12 d-flex flex-wrap gap-2">
+                <button class="btn btn-primary" type="submit">Post as GLOM</button>
+                <a class="btn btn-outline-secondary" href="/Setup">Setup</a>
+            </div>
+        </form>
+    </div>
+</div>

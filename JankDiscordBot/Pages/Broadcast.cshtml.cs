@@ -22,6 +22,7 @@ public class BroadcastModel : PageModel
 
     public ulong AnnouncementChannelId { get; private set; }
     public string BotState { get; private set; } = "Unknown";
+    public int MaxMessageLength => AnnouncementSender.MaxCustomMessageLength;
     public string? ResultMessage { get; private set; }
     public string ResultKind { get; private set; } = "info";
 

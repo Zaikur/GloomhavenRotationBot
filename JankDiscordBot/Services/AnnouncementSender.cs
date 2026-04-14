@@ -7,6 +7,8 @@ namespace GloomhavenRotationBot.Services;
 
 public sealed class AnnouncementSender
 {
+    public const int MaxCustomMessageLength = 2000;
+
     private readonly DiscordSocketClient _client;
     private readonly BotRepository _repo;
     private readonly AppSettingsService _settings;
@@ -116,8 +118,8 @@ public sealed class AnnouncementSender
         if (string.IsNullOrWhiteSpace(message))
             return (false, "Message cannot be empty.");
 
-        if (message.Length > 2000)
-            return (false, "Discord only accepts messages up to 2000 characters.");
+        if (message.Length > MaxCustomMessageLength)
+            return (false, $"Discord only accepts messages up to {MaxCustomMessageLength} characters.");
 
         var (channel, error) = await ResolveAnnouncementChannelAsync();
         if (channel == null)

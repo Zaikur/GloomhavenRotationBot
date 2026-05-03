@@ -1,6 +1,13 @@
 ﻿@{
     var path = Context?.Request?.Path.Value?.ToLowerInvariant() ?? "/";
-    string Active(string startsWith) => path.StartsWith(startsWith) ? "active" : "";
+    string Active(string route)
+    {
+        route = route.ToLowerInvariant();
+        if (route == "/")
+            return path == "/" ? "active" : "";
+
+        return path == route || path.StartsWith(route + "/") ? "active" : "";
+    }
 }
 
 <!doctype html>
@@ -50,6 +57,12 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link @Active("/broadcast")" href="/Broadcast">Broadcast</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link @Active("/transcript")" href="/Transcript">Transcript</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link @Active("/transcripthistory")" href="/TranscriptHistory">Transcript History</a>
                     </li>
                 </ul>
 

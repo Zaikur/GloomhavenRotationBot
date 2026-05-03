@@ -1,0 +1,470 @@
+@page
+@model TranscriptModel
+
+<style>
+    .transcript-shell {
+        display: flex;
+        flex-direction: column;
+        height: 68vh;
+        border: 1px solid rgba(255, 255, 255, .1);
+        border-radius: .75rem;
+        background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, .01));
+        overflow: hidden;
+    }
+
+    .transcript-feed {
+        flex: 1;
+        overflow-y: auto;
+        padding: .9rem;
+        display: flex;
+        flex-direction: column;
+        gap: .7rem;
+    }
+
+    .transcript-empty {
+        color: rgba(255, 255, 255, .65);
+        text-align: center;
+        padding: 2rem 1rem;
+    }
+
+    .chat-row {
+        display: flex;
+        align-items: flex-start;
+        gap: .6rem;
+    }
+
+    .chat-time {
+        width: 72px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: rgba(255, 255, 255, .55);
+        font-size: .75rem;
+        line-height: 1.6;
+        flex-shrink: 0;
+    }
+
+    .chat-bubble {
+        max-width: min(100%, 900px);
+        background: rgba(17, 24, 39, .9);
+        border: 1px solid rgba(255, 255, 255, .08);
+        border-radius: .8rem;
+        padding: .55rem .75rem;
+    }
+
+    .chat-speaker {
+        font-weight: 600;
+        color: #9fd7ff;
+        margin-bottom: .2rem;
+        font-size: .88rem;
+    }
+
+    .chat-text {
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.35;
+    }
+
+    .mapping-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: .75rem;
+    }
+
+    .mapping-card {
+        border: 1px solid rgba(255, 255, 255, .1);
+        border-radius: .6rem;
+        padding: .65rem;
+        background: rgba(255, 255, 255, .03);
+    }
+</style>
+
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <div>
+        <h2 class="m-0">Transcript</h2>
+        <div class="text-white-50">Local background recording + transcription + speaker mapping</div>
+    </div>
+    <div class="text-white-50 small text-md-end">
+        <div>Active session:</div>
+        @if (Model.ActiveSession is null)
+        {
+            <span class="badge text-bg-secondary">none</span>
+        }
+        else
+        {
+            <span class="badge text-bg-success">@Model.ActiveSession.SessionId</span>
+        }
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.FlashMessage))
+{
+    <div class="alert alert-@Model.FlashKind">@Model.FlashMessage</div>
+}
+
+<div class="row g-3">
+    <div class="col-12 col-xl-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Session Control</h5>
+                <p class="text-white-50 small">Recording runs in the app process, so it can continue if this tab is closed.</p>
+
+                <form method="post" asp-page-handler="Start" asp-antiforgery="false" class="row g-2 mb-2">
+                    <div class="col-12">
+                        <label class="form-label">Expected speakers</label>
+                        <input class="form-control" type="number" min="1" max="12" name="ExpectedSpeakers" value="@Model.ExpectedSpeakers" />
+                        <div class="form-text text-white-50">Use number of players physically present.</div>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary w-100" type="submit" @(Model.ActiveSession is null ? null : "disabled")>Start Recording</button>
+                    </div>
+                </form>
+
+                <form method="post" asp-page-handler="Stop" asp-antiforgery="false">
+                    <input type="hidden" name="sessionId" value="@Model.SelectedSessionId" />
+                    <button class="btn btn-outline-warning w-100" type="submit" @(Model.ActiveSession is null ? "disabled" : null)>Stop + Process</button>
+                </form>
+
+                <hr class="border-secondary" />
+
+                <h6>Transcription Command</h6>
+                <p class="text-white-50 small mb-2">
+                    Placeholders: <code>{input}</code>, <code>{output}</code>, <code>{speakers}</code>, <code>{sessionId}</code>
+                </p>
+
+                <form method="post" asp-page-handler="SaveConfig" asp-antiforgery="false" class="row g-2">
+                    <input type="hidden" name="sessionId" value="@Model.SelectedSessionId" />
+                    <div class="col-12">
+                        <label class="form-label">Command template</label>
+                        <textarea class="form-control font-monospace" name="CommandTemplate" rows="6">@Model.CommandTemplate</textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Transcript storage path</label>
+                        <input class="form-control" name="RootPath" value="@Model.RootPath" />
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-outline-info w-100" type="submit">Save Transcription Settings</button>
+                    </div>
+                </form>
+
+                <div class="text-white-50 small mt-2">
+                    Recommended local command:<br />
+                    <code>python -m whisperx {input} --model medium --language en --diarize --min_speakers {speakers} --max_speakers {speakers} --output_dir {output}</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mt-3">
+            <div class="card-body">
+                <h5 class="card-title">Recent Sessions</h5>
+                @if (Model.Sessions.Count == 0)
+                {
+                    <div class="text-white-50 small">No transcript sessions yet.</div>
+                }
+                else
+                {
+                    <div class="list-group list-group-flush">
+                        @foreach (var s in Model.Sessions)
+                        {
+                            <a class="list-group-item list-group-item-action @(s.SessionId == Model.SelectedSessionId ? "active" : "") js-session-link"
+                               href="/Transcript?sessionId=@s.SessionId">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <div class="fw-semibold">@s.SessionId</div>
+                                        <div class="small">Speakers: @s.ExpectedSpeakers</div>
+                                    </div>
+                                    <span class="badge text-bg-secondary">@s.Status</span>
+                                </div>
+                            </a>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-8">
+        <div class="card shadow-sm mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Speaker Mapping</h5>
+                @if (Model.SelectedSession is null)
+                {
+                    <div class="text-white-50 small">Select a session to map speakers.</div>
+                }
+                else if (Model.Speakers.Count == 0)
+                {
+                    <div id="speakerMappingGrid" class="text-white-50 small">No diarized speakers yet for this session.</div>
+                }
+                else
+                {
+                    <div class="mapping-grid" id="speakerMappingGrid">
+                        @foreach (var speaker in Model.Speakers)
+                        {
+                            var assignment = Model.SpeakerAssignments.TryGetValue(speaker, out var a) ? a : null;
+                            <form method="post" asp-page-handler="AssignSpeaker" asp-antiforgery="false" class="mapping-card js-mapping-form">
+                                <input type="hidden" name="sessionId" value="@Model.SelectedSessionId" />
+                                <input type="hidden" name="speaker" value="@speaker" />
+
+                                <label class="form-label mb-1"><strong>@speaker</strong></label>
+                                <div class="d-flex gap-2">
+                                    <select class="form-select" name="playerId">
+                                        <option value="">Unassigned</option>
+                                        @foreach (var member in Model.GuildMembers)
+                                        {
+                                            if (assignment?.PlayerId == member.Id)
+                                            {
+                                                <option value="@member.Id" selected>@member.Name</option>
+                                            }
+                                            else
+                                            {
+                                                <option value="@member.Id">@member.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                            </form>
+                        }
+                    </div>
+                }
+
+                <select id="playerOptionsTemplate" class="d-none" aria-hidden="true" tabindex="-1">
+                    <option value="">Unassigned</option>
+                    @foreach (var member in Model.GuildMembers)
+                    {
+                        <option value="@member.Id">@member.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="card-title m-0">Transcript Output</h5>
+                    @if (Model.SelectedSession != null)
+                    {
+                        <span class="badge text-bg-secondary" id="sessionStatusBadge">@Model.SelectedSession.Status</span>
+                    }
+                </div>
+
+                <div class="alert alert-warning @(Model.SelectedSession?.Error is { Length: > 0 } ? "" : "d-none")" id="sessionErrorBanner">
+                    @Model.SelectedSession?.Error
+                </div>
+
+                <div class="transcript-shell">
+                    <div class="transcript-feed" id="transcriptFeed">
+                        @if (Model.Segments.Count == 0)
+                        {
+                            <div class="transcript-empty" id="transcriptEmpty">No transcript segments available yet.</div>
+                        }
+                        else
+                        {
+                            @foreach (var segment in Model.Segments)
+                            {
+                                var displaySpeaker = Model.DisplaySpeaker(segment.Speaker);
+                                <div class="chat-row">
+                                    <div class="chat-time">@TimeSpan.FromSeconds(segment.StartSeconds).ToString(@"hh\:mm\:ss")</div>
+                                    <div class="chat-bubble">
+                                        <div class="chat-speaker">@displaySpeaker</div>
+                                        <div class="chat-text">@segment.Text</div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const selectedSessionId = '@Model.SelectedSessionId';
+        if (!selectedSessionId) {
+            return;
+        }
+
+        const feed = document.getElementById('transcriptFeed');
+        const statusBadge = document.getElementById('sessionStatusBadge');
+        const errorBanner = document.getElementById('sessionErrorBanner');
+        const mappingGrid = document.getElementById('speakerMappingGrid');
+        const optionsTemplateElement = document.getElementById('playerOptionsTemplate');
+        const memberOptionsTemplate = optionsTemplateElement ? optionsTemplateElement.innerHTML : '<option value="">Unassigned</option>';
+
+        const renderTime = (seconds) => {
+            const total = Math.max(0, Math.floor(seconds));
+            const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+            const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+            const ss = String(total % 60).padStart(2, '0');
+            return `${hh}:${mm}:${ss}`;
+        };
+
+        const isNearBottom = () => {
+            if (!feed) return false;
+            const distance = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+            return distance < 120;
+        };
+
+        const scrollToBottom = () => {
+            if (feed) {
+                feed.scrollTop = feed.scrollHeight;
+            }
+        };
+
+        const renderSegments = (segments) => {
+            if (!feed) return;
+
+            const shouldStickBottom = isNearBottom();
+            feed.innerHTML = '';
+
+            if (!segments || segments.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'transcript-empty';
+                empty.id = 'transcriptEmpty';
+                empty.textContent = 'No transcript segments available yet.';
+                feed.appendChild(empty);
+            } else {
+                for (const segment of segments) {
+                    const row = document.createElement('div');
+                    row.className = 'chat-row';
+
+                    const time = document.createElement('div');
+                    time.className = 'chat-time';
+                    time.textContent = renderTime(segment.startSeconds || 0);
+
+                    const bubble = document.createElement('div');
+                    bubble.className = 'chat-bubble';
+
+                    const speaker = document.createElement('div');
+                    speaker.className = 'chat-speaker';
+                    speaker.textContent = segment.displaySpeaker || segment.speaker || 'Speaker';
+
+                    const text = document.createElement('div');
+                    text.className = 'chat-text';
+                    text.textContent = segment.text || '';
+
+                    bubble.appendChild(speaker);
+                    bubble.appendChild(text);
+                    row.appendChild(time);
+                    row.appendChild(bubble);
+                    feed.appendChild(row);
+                }
+            }
+
+            if (shouldStickBottom) {
+                scrollToBottom();
+            }
+        };
+
+        const renderMappings = (speakers) => {
+            if (!mappingGrid) return;
+
+            if (!speakers || speakers.length === 0) {
+                mappingGrid.className = 'text-white-50 small';
+                mappingGrid.innerHTML = '<div class="text-white-50 small">No diarized speakers yet for this session.</div>';
+                return;
+            }
+
+            mappingGrid.className = 'mapping-grid';
+            mappingGrid.innerHTML = '';
+            for (const speaker of speakers) {
+                const form = document.createElement('form');
+                form.method = 'post';
+                form.action = '/Transcript?handler=AssignSpeaker';
+                form.className = 'mapping-card js-mapping-form';
+
+                const inputSession = document.createElement('input');
+                inputSession.type = 'hidden';
+                inputSession.name = 'sessionId';
+                inputSession.value = selectedSessionId;
+
+                const inputSpeaker = document.createElement('input');
+                inputSpeaker.type = 'hidden';
+                inputSpeaker.name = 'speaker';
+                inputSpeaker.value = speaker.speaker;
+
+                const label = document.createElement('label');
+                label.className = 'form-label mb-1';
+                label.innerHTML = `<strong>${speaker.speaker}</strong>`;
+
+                const wrap = document.createElement('div');
+                wrap.className = 'd-flex gap-2';
+
+                const select = document.createElement('select');
+                select.className = 'form-select';
+                select.name = 'playerId';
+                select.innerHTML = '<option value="">Unassigned</option>' + memberOptionsTemplate;
+                if (speaker.assignedPlayerId) {
+                    select.value = String(speaker.assignedPlayerId);
+                }
+
+                select.addEventListener('change', () => {
+                    submitMappingForm(form);
+                });
+
+                wrap.appendChild(select);
+                form.appendChild(inputSession);
+                form.appendChild(inputSpeaker);
+                form.appendChild(label);
+                form.appendChild(wrap);
+                mappingGrid.appendChild(form);
+            }
+        };
+
+        const updateStatus = (payload) => {
+            if (statusBadge && payload.status) {
+                statusBadge.textContent = payload.status;
+            }
+
+            if (!errorBanner) return;
+
+            if (payload.error) {
+                errorBanner.classList.remove('d-none');
+                errorBanner.textContent = payload.error;
+            } else {
+                errorBanner.classList.add('d-none');
+                errorBanner.textContent = '';
+            }
+        };
+
+        const refreshLive = async () => {
+            try {
+                const response = await fetch(`/Transcript?handler=Live&sessionId=${encodeURIComponent(selectedSessionId)}`, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                if (!response.ok) return;
+
+                const payload = await response.json();
+                updateStatus(payload);
+                renderMappings(payload.speakers || []);
+                renderSegments(payload.segments || []);
+            } catch {
+                // Ignore intermittent polling errors.
+            }
+        };
+
+        const submitMappingForm = async (form) => {
+            const data = new FormData(form);
+            try {
+                await fetch('/Transcript?handler=AssignSpeaker', {
+                    method: 'POST',
+                    body: data,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                await refreshLive();
+            } catch {
+                // Ignore and keep existing mapping state.
+            }
+        };
+
+        document.querySelectorAll('.js-mapping-form').forEach((form) => {
+            const select = form.querySelector('select[name="playerId"]');
+            if (select) {
+                select.addEventListener('change', () => submitMappingForm(form));
+            }
+        });
+
+        scrollToBottom();
+        refreshLive();
+        window.setInterval(refreshLive, 3500);
+    })();
+</script>

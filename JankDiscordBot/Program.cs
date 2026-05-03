@@ -43,6 +43,7 @@ builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<AnnouncementSender>();
 builder.Services.AddSingleton<BangResponseService>();
 builder.Services.AddSingleton<ChatbotService>();
+builder.Services.AddSingleton<GameplayTranscriptionService>();
 builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();

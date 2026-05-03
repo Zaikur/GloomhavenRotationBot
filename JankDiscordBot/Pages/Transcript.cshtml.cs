@@ -168,6 +168,7 @@ public class TranscriptModel : PageModel
             SessionId = session.SessionId,
             Status = session.Status,
             Error = session.Error,
+            IsActive = ActiveSession?.SessionId == session.SessionId,
             Speakers = speakers.Select(s => new LiveSpeaker
             {
                 Speaker = s,
@@ -254,6 +255,7 @@ public class TranscriptModel : PageModel
         [JsonPropertyName("sessionId")] public string SessionId { get; set; } = string.Empty;
         [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
         [JsonPropertyName("error")] public string? Error { get; set; }
+        [JsonPropertyName("isActive")] public bool IsActive { get; set; }
         [JsonPropertyName("speakers")] public List<LiveSpeaker> Speakers { get; set; } = new();
         [JsonPropertyName("segments")] public List<LiveSegment> Segments { get; set; } = new();
     }

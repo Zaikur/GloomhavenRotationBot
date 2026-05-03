@@ -334,6 +334,7 @@
         let pendingUploads = 0;
         let chunkCounter = 0;
         let uploadChain = Promise.resolve();
+        let lastChunkSize = 0;
 
         const renderTime = (seconds) => {
             const total = Math.max(0, Math.floor(seconds));
@@ -460,6 +461,13 @@
                 statusBadge.textContent = payload.status;
             }
 
+            if (payload.isActive) {
+                activeSessionId = payload.sessionId || activeSessionId;
+                selectedSessionId = payload.sessionId || selectedSessionId;
+            } else if (payload.sessionId && activeSessionId === payload.sessionId && payload.status && payload.status.startsWith('Completed')) {
+                activeSessionId = '';
+            }
+
             if (payload.status && (payload.status.startsWith('Completed') || payload.status === 'Failed')) {
                 stopBrowserMic().catch(() => {
                     // Ignore stop errors during live status updates.
@@ -501,6 +509,22 @@
             if (browserMicStatus) {
                 browserMicStatus.textContent = text;
             }
+        };
+
+        const describeBytes = (bytes) => {
+            if (!Number.isFinite(bytes) || bytes <= 0) {
+                return '0 B';
+            }
+
+            if (bytes < 1024) {
+                return `${bytes} B`;
+            }
+
+            if (bytes < 1024 * 1024) {
+                return `${(bytes / 1024).toFixed(1)} KB`;
+            }
+
+            return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
         };
 
         const renderShortTime = (seconds) => {
@@ -587,6 +611,8 @@
                 return;
             }
 
+            lastChunkSize = blob.size;
+
             const fd = new FormData();
             const fileName = `chunk-${String(chunkCounter).padStart(5, '0')}.webm`;
             chunkCounter += 1;
@@ -615,6 +641,7 @@
             }
 
             nextChunkDueAt = Date.now() + (chunkSeconds * 1000);
+            setBrowserStatus(`Uploaded chunk ${String(chunkCounter - 1).padStart(5, '0')} (${describeBytes(lastChunkSize)}).`);
         };
 
         const enqueueUpload = (blob) => {
@@ -647,6 +674,10 @@
         };
 
         const ensureSessionStarted = async () => {
+            if (!activeSessionId && selectedSessionId) {
+                await refreshLive();
+            }
+
             if (activeSessionId) {
                 selectedSessionId = activeSessionId;
                 return;
@@ -710,7 +741,14 @@
                 : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
 
             try {
-                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
                 mediaRecorder = preferredMime
                     ? new MediaRecorder(mediaStream, { mimeType: preferredMime })
                     : new MediaRecorder(mediaStream);
@@ -718,6 +756,8 @@
                 mediaRecorder.ondataavailable = (evt) => {
                     if (evt.data && evt.data.size > 0) {
                         enqueueUpload(evt.data);
+                    } else {
+                        setBrowserStatus('Recorder produced a zero-byte chunk.');
                     }
                 };
 
@@ -730,7 +770,7 @@
                     setBrowserButtons(false);
                     setBrowserStatus(pendingUploads > 0
                         ? `Laptop mic stopped. Uploading ${pendingUploads} pending chunk(s)...`
-                        : 'Laptop mic stopped.');
+                        : `Laptop mic stopped. Last chunk size: ${describeBytes(lastChunkSize)}.`);
 
                     stopTimerLoop();
                     mediaRecorder = null;
@@ -765,7 +805,7 @@
                 mediaRecorder.start(chunkSeconds * 1000);
                 isPaused = false;
                 setBrowserButtons(true);
-                setBrowserStatus('Laptop mic recording and streaming chunks...');
+                setBrowserStatus(`Laptop mic recording and streaming ${chunkSeconds}s chunks...`);
                 recorderStopPromise = null;
                 recorderStopResolve = null;
                 startTimerLoop();

@@ -70,12 +70,37 @@ public class TranscriptModel : PageModel
     public async Task<IActionResult> OnPostStartAsync(string? sessionId)
     {
         var (ok, msg) = await _transcription.StartSessionAsync(ExpectedSpeakers, HttpContext.RequestAborted);
+
+        if (IsAjaxRequest())
+        {
+            var active = await _transcription.GetActiveSessionAsync(HttpContext.RequestAborted);
+            return new JsonResult(new
+            {
+                ok,
+                message = msg,
+                sessionId = active?.SessionId ?? string.Empty
+            }) { StatusCode = ok ? 200 : 400 };
+        }
+
         return RedirectToPage(new { sessionId, message = msg, kind = ok ? "success" : "warning" });
     }
 
     public async Task<IActionResult> OnPostStopAsync(string? sessionId)
     {
+        var active = await _transcription.GetActiveSessionAsync(HttpContext.RequestAborted);
+        var activeSessionId = active?.SessionId ?? string.Empty;
         var (ok, msg) = await _transcription.StopSessionAsync(HttpContext.RequestAborted);
+
+        if (IsAjaxRequest())
+        {
+            return new JsonResult(new
+            {
+                ok,
+                message = msg,
+                sessionId = activeSessionId
+            }) { StatusCode = ok ? 200 : 400 };
+        }
+
         return RedirectToPage(new { sessionId, message = msg, kind = ok ? "success" : "warning" });
     }
 
@@ -214,6 +239,14 @@ public class TranscriptModel : PageModel
         }
 
         return speaker;
+    }
+
+    private bool IsAjaxRequest()
+    {
+        if (!Request.Headers.TryGetValue("X-Requested-With", out var requestedWith))
+            return false;
+
+        return string.Equals(requestedWith.ToString(), "XMLHttpRequest", StringComparison.OrdinalIgnoreCase);
     }
 
     public sealed class LivePayload

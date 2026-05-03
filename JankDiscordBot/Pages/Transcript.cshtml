@@ -75,12 +75,31 @@
         padding: .65rem;
         background: rgba(255, 255, 255, .03);
     }
+
+    .mic-stats {
+        border: 1px solid rgba(255, 255, 255, .12);
+        border-radius: .5rem;
+        background: rgba(255, 255, 255, .03);
+        padding: .5rem .65rem;
+    }
+
+    .mic-stats .label {
+        color: rgba(255, 255, 255, .7);
+        font-size: .75rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+    }
+
+    .mic-stats .value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-weight: 600;
+    }
 </style>
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
     <div>
         <h2 class="m-0">Transcript</h2>
-        <div class="text-white-50">Local background recording + transcription + speaker mapping</div>
+        <div class="text-white-50">Browser mic upload + transcription + speaker mapping</div>
     </div>
     <div class="text-white-50 small text-md-end">
         <div>Active session:</div>
@@ -105,28 +124,27 @@
         <div class="card shadow-sm">
             <div class="card-body">
                 <h5 class="card-title">Session Control</h5>
-                <p class="text-white-50 small">Recording runs in the app process, so it can continue if this tab is closed.</p>
+                <p class="text-white-50 small">Recording audio requires this page to stay open while laptop mic streaming is active.</p>
 
-                <form method="post" asp-page-handler="Start" asp-antiforgery="false" class="row g-2 mb-2">
+                <form id="startSessionForm" method="post" asp-page-handler="Start" asp-antiforgery="false" class="row g-2 mb-2">
                     <div class="col-12">
                         <label class="form-label">Expected speakers</label>
-                        <input class="form-control" type="number" min="1" max="12" name="ExpectedSpeakers" value="@Model.ExpectedSpeakers" />
+                        <input class="form-control" id="expectedSpeakersInput" type="number" min="1" max="12" name="ExpectedSpeakers" value="@Model.ExpectedSpeakers" />
                         <div class="form-text text-white-50">Use number of players physically present.</div>
                     </div>
                     <div class="col-12">
-                        <button class="btn btn-primary w-100" type="submit" @(Model.ActiveSession is null ? null : "disabled")>Start Recording</button>
+                        <button class="btn btn-primary w-100" id="startRecordingBtn" type="button">Start Recording</button>
                     </div>
                 </form>
 
-                <form method="post" asp-page-handler="Stop" asp-antiforgery="false">
-                    <input type="hidden" name="sessionId" value="@Model.SelectedSessionId" />
-                    <button class="btn btn-outline-warning w-100" id="stopProcessBtn" type="submit" @(Model.ActiveSession is null ? "disabled" : null)>Stop + Process</button>
-                </form>
-
                 <div class="mt-2 d-grid gap-2">
-                    <button class="btn btn-success" id="startBrowserMicBtn" type="button" @(Model.ActiveSession is null ? "disabled" : null)>Start Laptop Mic</button>
-                    <button class="btn btn-outline-secondary" id="stopBrowserMicBtn" type="button" disabled>Stop Laptop Mic</button>
+                    <button class="btn btn-outline-secondary" id="pauseRecordingBtn" type="button" disabled>Pause</button>
+                    <button class="btn btn-outline-warning" id="stopRecordingBtn" type="button" @(Model.ActiveSession is null ? "disabled" : null)>Stop + Process</button>
                     <div class="small text-white-50" id="browserMicStatus">Laptop mic idle.</div>
+                    <div class="mic-stats">
+                        <div class="d-flex justify-content-between"><span class="label">Recording Elapsed</span><span class="value" id="recordingElapsed">00:00:00</span></div>
+                        <div class="d-flex justify-content-between"><span class="label">Next Chunk In</span><span class="value" id="nextChunkCountdown">--:--</span></div>
+                    </div>
                 </div>
 
                 <hr class="border-secondary" />
@@ -284,12 +302,9 @@
 
 <script>
     (() => {
-        const selectedSessionId = '@Model.SelectedSessionId';
-        const activeSessionId = '@Model.ActiveSession?.SessionId';
+        let selectedSessionId = '@Model.SelectedSessionId';
+        let activeSessionId = '@Model.ActiveSession?.SessionId';
         const chunkSeconds = @GloomhavenRotationBot.Services.GameplayTranscriptionService.ChunkSeconds;
-        if (!selectedSessionId) {
-            return;
-        }
 
         const feed = document.getElementById('transcriptFeed');
         const statusBadge = document.getElementById('sessionStatusBadge');
@@ -297,13 +312,26 @@
         const mappingGrid = document.getElementById('speakerMappingGrid');
         const optionsTemplateElement = document.getElementById('playerOptionsTemplate');
         const memberOptionsTemplate = optionsTemplateElement ? optionsTemplateElement.innerHTML : '<option value="">Unassigned</option>';
-        const startBrowserMicBtn = document.getElementById('startBrowserMicBtn');
-        const stopBrowserMicBtn = document.getElementById('stopBrowserMicBtn');
+        const startSessionForm = document.getElementById('startSessionForm');
+        const expectedSpeakersInput = document.getElementById('expectedSpeakersInput');
+        const startRecordingBtn = document.getElementById('startRecordingBtn');
+        const pauseRecordingBtn = document.getElementById('pauseRecordingBtn');
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
         const browserMicStatus = document.getElementById('browserMicStatus');
-        const stopProcessBtn = document.getElementById('stopProcessBtn');
+        const recordingElapsed = document.getElementById('recordingElapsed');
+        const nextChunkCountdown = document.getElementById('nextChunkCountdown');
 
         let mediaStream = null;
         let mediaRecorder = null;
+        let recorderStopPromise = null;
+        let recorderStopResolve = null;
+        let isPaused = false;
+        let pauseStartedAt = 0;
+        let pausedAccumulatedMs = 0;
+        let timerHandle = null;
+        let recordingStartedAt = 0;
+        let nextChunkDueAt = 0;
+        let pendingUploads = 0;
         let chunkCounter = 0;
         let uploadChain = Promise.resolve();
 
@@ -433,7 +461,9 @@
             }
 
             if (payload.status && (payload.status.startsWith('Completed') || payload.status === 'Failed')) {
-                stopBrowserMic();
+                stopBrowserMic().catch(() => {
+                    // Ignore stop errors during live status updates.
+                });
             }
 
             if (!errorBanner) return;
@@ -448,6 +478,10 @@
         };
 
         const refreshLive = async () => {
+            if (!selectedSessionId) {
+                return;
+            }
+
             try {
                 const response = await fetch(`/Transcript?handler=Live&sessionId=${encodeURIComponent(selectedSessionId)}`, {
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -469,18 +503,87 @@
             }
         };
 
-        const setBrowserButtons = (isRecording) => {
-            if (startBrowserMicBtn) {
-                startBrowserMicBtn.disabled = isRecording || activeSessionId !== selectedSessionId;
+        const renderShortTime = (seconds) => {
+            const total = Math.max(0, Math.floor(seconds));
+            const mm = String(Math.floor(total / 60)).padStart(2, '0');
+            const ss = String(total % 60).padStart(2, '0');
+            return `${mm}:${ss}`;
+        };
+
+        const updateMicTimers = () => {
+            if (!recordingElapsed || !nextChunkCountdown) {
+                return;
             }
 
-            if (stopBrowserMicBtn) {
-                stopBrowserMicBtn.disabled = !isRecording;
+            if (!recordingStartedAt) {
+                recordingElapsed.textContent = '00:00:00';
+                nextChunkCountdown.textContent = '--:--';
+                return;
+            }
+
+            const now = Date.now();
+            const pausedMs = isPaused && pauseStartedAt
+                ? (now - pauseStartedAt)
+                : 0;
+            const elapsedMs = Math.max(0, (now - recordingStartedAt) - pausedAccumulatedMs - pausedMs);
+            recordingElapsed.textContent = renderTime(elapsedMs / 1000);
+
+            if (isPaused) {
+                nextChunkCountdown.textContent = 'paused';
+                return;
+            }
+
+            const remaining = Math.max(0, (nextChunkDueAt - now) / 1000);
+            nextChunkCountdown.textContent = renderShortTime(remaining);
+        };
+
+        const stopTimerLoop = () => {
+            if (timerHandle) {
+                window.clearInterval(timerHandle);
+                timerHandle = null;
+            }
+
+            recordingStartedAt = 0;
+            nextChunkDueAt = 0;
+            pausedAccumulatedMs = 0;
+            pauseStartedAt = 0;
+            isPaused = false;
+            updateMicTimers();
+        };
+
+        const startTimerLoop = () => {
+            recordingStartedAt = Date.now();
+            nextChunkDueAt = recordingStartedAt + (chunkSeconds * 1000);
+            pausedAccumulatedMs = 0;
+            pauseStartedAt = 0;
+            isPaused = false;
+            updateMicTimers();
+
+            if (timerHandle) {
+                window.clearInterval(timerHandle);
+            }
+
+            timerHandle = window.setInterval(updateMicTimers, 250);
+        };
+
+        const setBrowserButtons = (isRecording) => {
+            if (startRecordingBtn) {
+                startRecordingBtn.disabled = isRecording;
+            }
+
+            if (pauseRecordingBtn) {
+                pauseRecordingBtn.disabled = !isRecording;
+                pauseRecordingBtn.textContent = isPaused ? 'Resume' : 'Pause';
+            }
+
+            if (stopRecordingBtn) {
+                stopRecordingBtn.disabled = !isRecording;
             }
         };
 
         const uploadChunk = async (blob) => {
             if (!(blob instanceof Blob) || blob.size === 0) {
+                setBrowserStatus('Skipped an empty audio chunk.');
                 return;
             }
 
@@ -510,22 +613,89 @@
 
                 throw new Error(msg);
             }
+
+            nextChunkDueAt = Date.now() + (chunkSeconds * 1000);
         };
 
         const enqueueUpload = (blob) => {
+            pendingUploads += 1;
             uploadChain = uploadChain
                 .then(() => uploadChunk(blob))
                 .catch((err) => {
                     setBrowserStatus(`Mic upload error: ${err.message || 'unknown error'}`);
+                })
+                .finally(() => {
+                    pendingUploads = Math.max(0, pendingUploads - 1);
                 });
+
+            return uploadChain;
         };
 
-        const startBrowserMic = async () => {
-            if (activeSessionId !== selectedSessionId) {
-                setBrowserStatus('Select the active session before starting laptop mic.');
+        const waitForRecorderStop = async () => {
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
                 return;
             }
 
+            if (!recorderStopPromise) {
+                recorderStopPromise = new Promise((resolve) => {
+                    recorderStopResolve = resolve;
+                });
+            }
+
+            mediaRecorder.stop();
+            await recorderStopPromise;
+        };
+
+        const ensureSessionStarted = async () => {
+            if (activeSessionId) {
+                selectedSessionId = activeSessionId;
+                return;
+            }
+
+            const expected = Number(expectedSpeakersInput?.value ?? '4');
+            const fd = startSessionForm
+                ? new FormData(startSessionForm)
+                : new FormData();
+
+            fd.set('ExpectedSpeakers', String(Number.isFinite(expected) ? expected : 4));
+
+            const response = await fetch('/Transcript?handler=Start', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            const payload = await response.json().catch(() => ({ ok: false, message: `Start failed (${response.status}).` }));
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || `Start failed (${response.status}).`);
+            }
+
+            activeSessionId = payload.sessionId || activeSessionId;
+            selectedSessionId = activeSessionId;
+        };
+
+        const stopSessionOnServer = async () => {
+            const fd = new FormData();
+            if (selectedSessionId) {
+                fd.append('sessionId', selectedSessionId);
+            }
+
+            const response = await fetch('/Transcript?handler=Stop', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            const payload = await response.json().catch(() => ({ ok: false, message: `Stop failed (${response.status}).` }));
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || `Stop failed (${response.status}).`);
+            }
+
+            selectedSessionId = payload.sessionId || selectedSessionId;
+            activeSessionId = '';
+        };
+
+        const startBrowserMic = async () => {
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
                 setBrowserStatus('This browser does not support microphone capture uploads.');
                 return;
@@ -552,27 +722,117 @@
                 };
 
                 mediaRecorder.onstop = () => {
+                    if (recorderStopResolve) {
+                        recorderStopResolve();
+                        recorderStopResolve = null;
+                    }
+
                     setBrowserButtons(false);
-                    setBrowserStatus('Laptop mic stopped.');
+                    setBrowserStatus(pendingUploads > 0
+                        ? `Laptop mic stopped. Uploading ${pendingUploads} pending chunk(s)...`
+                        : 'Laptop mic stopped.');
+
+                    stopTimerLoop();
+                    mediaRecorder = null;
+                };
+
+                mediaRecorder.onpause = () => {
+                    isPaused = true;
+                    pauseStartedAt = Date.now();
+                    setBrowserStatus('Recording paused.');
+                    setBrowserButtons(true);
+                    updateMicTimers();
+                };
+
+                mediaRecorder.onresume = () => {
+                    if (pauseStartedAt) {
+                        pausedAccumulatedMs += Math.max(0, Date.now() - pauseStartedAt);
+                    }
+
+                    pauseStartedAt = 0;
+                    isPaused = false;
+                    nextChunkDueAt = Date.now() + (chunkSeconds * 1000);
+                    setBrowserStatus('Recording resumed.');
+                    setBrowserButtons(true);
+                    updateMicTimers();
+                };
+
+                mediaRecorder.onerror = (evt) => {
+                    const detail = evt?.error?.message || evt?.error?.name || 'unknown MediaRecorder error';
+                    setBrowserStatus(`Mic capture error: ${detail}`);
                 };
 
                 mediaRecorder.start(chunkSeconds * 1000);
+                isPaused = false;
                 setBrowserButtons(true);
                 setBrowserStatus('Laptop mic recording and streaming chunks...');
+                recorderStopPromise = null;
+                recorderStopResolve = null;
+                startTimerLoop();
             } catch (err) {
                 setBrowserButtons(false);
                 setBrowserStatus(`Could not start laptop mic: ${err.message || 'permission denied'}`);
+                stopTimerLoop();
             }
         };
 
-        const stopBrowserMic = () => {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-            }
+        const stopBrowserMic = async () => {
+            await waitForRecorderStop();
 
             if (mediaStream) {
                 mediaStream.getTracks().forEach((track) => track.stop());
                 mediaStream = null;
+            }
+
+            await uploadChain;
+            setBrowserStatus('Laptop mic stopped. All chunks uploaded.');
+            setBrowserButtons(false);
+        };
+
+        const togglePause = () => {
+            if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+                return;
+            }
+
+            if (mediaRecorder.state === 'recording') {
+                mediaRecorder.pause();
+            } else if (mediaRecorder.state === 'paused') {
+                mediaRecorder.resume();
+            }
+        };
+
+        const startWorkflow = async () => {
+            try {
+                setBrowserStatus('Starting session...');
+                setBrowserButtons(true);
+                await ensureSessionStarted();
+                await startBrowserMic();
+                await refreshLive();
+            } catch (err) {
+                setBrowserStatus(`Could not start recording: ${err.message || 'unknown error'}`);
+                setBrowserButtons(false);
+            }
+        };
+
+        const stopWorkflow = async () => {
+            try {
+                setBrowserStatus('Stopping mic and waiting for pending uploads...');
+                if (pauseRecordingBtn) pauseRecordingBtn.disabled = true;
+                if (stopRecordingBtn) stopRecordingBtn.disabled = true;
+                if (startRecordingBtn) startRecordingBtn.disabled = true;
+
+                await stopBrowserMic();
+                setBrowserStatus('All chunks uploaded. Processing final transcript...');
+                await stopSessionOnServer();
+                setBrowserStatus('Session stopped and processing complete.');
+                await refreshLive();
+
+                if (selectedSessionId) {
+                    window.location.href = `/Transcript?sessionId=${encodeURIComponent(selectedSessionId)}`;
+                }
+            } catch (err) {
+                setBrowserStatus(`Could not stop recording: ${err.message || 'unknown error'}`);
+                setBrowserButtons(mediaRecorder && mediaRecorder.state !== 'inactive');
             }
         };
 
@@ -597,31 +857,27 @@
             }
         });
 
-        if (startBrowserMicBtn) {
-            startBrowserMicBtn.addEventListener('click', async () => {
-                await startBrowserMic();
+        if (startRecordingBtn) {
+            startRecordingBtn.addEventListener('click', async () => {
+                await startWorkflow();
             });
         }
 
-        if (stopBrowserMicBtn) {
-            stopBrowserMicBtn.addEventListener('click', () => {
-                stopBrowserMic();
+        if (pauseRecordingBtn) {
+            pauseRecordingBtn.addEventListener('click', () => {
+                togglePause();
             });
         }
 
-        if (stopProcessBtn) {
-            stopProcessBtn.addEventListener('click', async (evt) => {
-                evt.preventDefault();
-                stopBrowserMic();
-                await uploadChain;
-                const stopForm = stopProcessBtn.closest('form');
-                if (stopForm) {
-                    stopForm.submit();
-                }
+        if (stopRecordingBtn) {
+            stopRecordingBtn.addEventListener('click', async () => {
+                await stopWorkflow();
             });
         }
 
-        setBrowserButtons(false);
+        const initiallyRecording = Boolean(activeSessionId);
+        setBrowserButtons(initiallyRecording);
+        stopTimerLoop();
 
         scrollToBottom();
         refreshLive();

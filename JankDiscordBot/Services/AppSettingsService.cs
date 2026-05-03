@@ -16,6 +16,7 @@ public sealed class AppSettingsService
     private const string KeyPurposePromptSeenUsers = "Bang.PurposePromptSeenUsers";
     private const string KeyTranscriptCommandTemplate = "Transcription.CommandTemplate";
     private const string KeyTranscriptRootPath = "Transcription.RootPath";
+    private const string KeyHuggingFaceToken = "Transcription.HuggingFaceToken";
     private const string DiscordTokenKey = "discord.token";
     private const string DiscordGuildKey = "discord.guildId";
     private const string DiscordRegKey = "discord.registerToGuild";
@@ -196,6 +197,26 @@ public sealed class AppSettingsService
         var normalizedRoot = string.IsNullOrWhiteSpace(rootPath) ? "data/transcripts" : rootPath.Trim();
         await _repo.UpsertSettingAsync(KeyTranscriptCommandTemplate, commandTemplate?.Trim() ?? string.Empty);
         await _repo.UpsertSettingAsync(KeyTranscriptRootPath, normalizedRoot);
+    }
+
+    public async Task<string> GetHuggingFaceTokenAsync()
+    {
+        var raw = (await _repo.GetSettingAsync(KeyHuggingFaceToken))?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        try { return _protector.Unprotect(raw); }
+        catch { return ""; }
+    }
+
+    public async Task<bool> HasHuggingFaceTokenAsync()
+    {
+        var val = await GetHuggingFaceTokenAsync();
+        return !string.IsNullOrWhiteSpace(val);
+    }
+
+    public async Task SaveHuggingFaceTokenAsync(string? tokenPlain)
+    {
+        if (!string.IsNullOrWhiteSpace(tokenPlain))
+            await _repo.UpsertSettingAsync(KeyHuggingFaceToken, _protector.Protect(tokenPlain.Trim()));
     }
 
     private async Task<HashSet<ulong>> GetPurposePromptSeenUsersAsync()

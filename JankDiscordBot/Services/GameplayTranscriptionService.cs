@@ -479,7 +479,8 @@ public sealed class GameplayTranscriptionService
             Directory.CreateDirectory(outputDir);
 
             var command = BuildCommand(commandTemplate, chunkPath, outputDir, expectedSpeakers, sessionId);
-            var (exitCode, stdout, stderr) = await RunShellCommandAsync(command, ct);
+            var hfToken = await _settings.GetHuggingFaceTokenAsync();
+            var (exitCode, stdout, stderr) = await RunShellCommandAsync(command, hfToken, ct);
 
             await AppendRunLogAsync(sessionDir, chunkBase, command, exitCode, stdout, stderr, ct);
 
@@ -677,7 +678,7 @@ public sealed class GameplayTranscriptionService
             .Replace("{sessionId}", QuoteForShell(sessionId), StringComparison.Ordinal);
     }
 
-    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunShellCommandAsync(string command, CancellationToken ct)
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunShellCommandAsync(string command, string? hfToken, CancellationToken ct)
     {
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         var shell = isWindows ? "cmd.exe" : "/bin/bash";
@@ -692,6 +693,9 @@ public sealed class GameplayTranscriptionService
             RedirectStandardError = true,
             CreateNoWindow = true
         };
+
+        if (!string.IsNullOrWhiteSpace(hfToken))
+            psi.Environment["HUGGINGFACE_TOKEN"] = hfToken;
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start shell process.");
 

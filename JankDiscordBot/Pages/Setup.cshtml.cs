@@ -23,9 +23,10 @@ public class SetupModel : PageModel
     [BindProperty] public string AnnounceTime { get; set; } = "09:00"; // "HH:mm"
     [BindProperty] public int AutoAdvanceMinutesAfterStart { get; set; } = 60;
     [BindProperty] public bool ResetPurposePromptHistory { get; set; }
-
+    [BindProperty] public string? HuggingFaceToken { get; set; }
 
     public bool HasToken { get; private set; }
+    public bool HasHuggingFaceToken { get; private set; }
     public string? Message { get; set; }
     public string MessageKind { get; set; } = "info"; // "info" | "success" | "warning" | "danger"
 
@@ -41,6 +42,7 @@ public class SetupModel : PageModel
         AnnounceTime = $"{h:D2}:{m:D2}";
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
+        HasHuggingFaceToken = await _settings.HasHuggingFaceTokenAsync();
     }
 
     public async Task<IActionResult> OnPostAsync()
@@ -75,6 +77,8 @@ public class SetupModel : PageModel
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
 
+        await _settings.SaveHuggingFaceTokenAsync(HuggingFaceToken);
+
         if (ResetPurposePromptHistory)
             await _settings.ResetPurposePromptSeenAsync();
 
@@ -84,6 +88,7 @@ public class SetupModel : PageModel
         MessageKind = "success";
 
         Token = null; // never echo back
+        HuggingFaceToken = null; // never echo back
         ResetPurposePromptHistory = false;
         await ReloadTokenFlagAsync();
 

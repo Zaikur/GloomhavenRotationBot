@@ -44,6 +44,26 @@
                        placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
             </div>
 
+            <div class="col-12">
+                <label class="form-label">HuggingFace Token</label>
+                @if (Model.HasHuggingFaceToken)
+                {
+                    <span class="badge bg-success ms-1 mb-1">Token stored</span>
+                }
+                else
+                {
+                    <span class="badge bg-warning text-dark ms-1 mb-1">Not set</span>
+                }
+                <input class="form-control"
+                       name="HuggingFaceToken"
+                       type="password"
+                       value=""
+                       placeholder="@(Model.HasHuggingFaceToken ? "HF token stored — leave blank to keep" : "Paste HuggingFace token (needed for speaker diarization)")" />
+                <div class="form-text text-white-50">
+                    Required for WhisperX speaker diarization. Get one at <code>huggingface.co/settings/tokens</code>.
+                </div>
+            </div>
+
             <div class="col-12 form-check">
                 <input class="form-check-input" type="checkbox" name="RegisterToGuild" value="true" @(Model.RegisterToGuild ? "checked" : "") />
                 <label class="form-check-label">Register commands to this guild (fast updates)</label>

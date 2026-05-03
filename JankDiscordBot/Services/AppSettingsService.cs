@@ -1,12 +1,10 @@
-﻿using Microsoft.AspNetCore.DataProtection;
-using GloomhavenRotationBot.Data;
+﻿using GloomhavenRotationBot.Data;
 
 namespace GloomhavenRotationBot.Services;
 
 public sealed class AppSettingsService
 {
     private readonly BotRepository _repo;
-    private readonly IDataProtector _protector;
     private readonly ILogger<AppSettingsService> _log;
 
     private const string KeyAnnounceChannelId = "Discord.AnnounceChannelId";
@@ -22,11 +20,10 @@ public sealed class AppSettingsService
     private const string DiscordRegKey = "discord.registerToGuild";
 
 
-    public AppSettingsService(BotRepository repo, IDataProtectionProvider dp, ILogger<AppSettingsService> log)
+    public AppSettingsService(BotRepository repo, ILogger<AppSettingsService> log)
     {
         _repo = repo;
         _log = log;
-        _protector = dp.CreateProtector("GloomhavenRotationBot.DiscordToken.v1");
     }
 
     private const string KeyTzId = "Scheduling.TimeZoneId";
@@ -201,10 +198,7 @@ public sealed class AppSettingsService
 
     public async Task<string> GetHuggingFaceTokenAsync()
     {
-        var raw = (await _repo.GetSettingAsync(KeyHuggingFaceToken))?.Trim() ?? "";
-        if (string.IsNullOrWhiteSpace(raw)) return "";
-        try { return _protector.Unprotect(raw); }
-        catch { return ""; }
+        return (await _repo.GetSettingAsync(KeyHuggingFaceToken))?.Trim() ?? "";
     }
 
     public async Task<bool> HasHuggingFaceTokenAsync()
@@ -216,7 +210,7 @@ public sealed class AppSettingsService
     public async Task SaveHuggingFaceTokenAsync(string? tokenPlain)
     {
         if (!string.IsNullOrWhiteSpace(tokenPlain))
-            await _repo.UpsertSettingAsync(KeyHuggingFaceToken, _protector.Protect(tokenPlain.Trim()));
+            await _repo.UpsertSettingAsync(KeyHuggingFaceToken, tokenPlain.Trim());
     }
 
     private async Task<HashSet<ulong>> GetPurposePromptSeenUsersAsync()

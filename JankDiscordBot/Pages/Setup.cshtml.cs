@@ -4,6 +4,8 @@ using Discord.Rest;
 using GloomhavenRotationBot.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using System.Net;
+using System.Net.Http.Headers;
 
 public class SetupModel : PageModel
 {
@@ -45,52 +47,22 @@ public class SetupModel : PageModel
         HasHuggingFaceToken = await _settings.HasHuggingFaceTokenAsync();
     }
 
-    public async Task<IActionResult> OnPostAsync()
+    public async Task<IActionResult> OnPostSaveDiscordAsync()
     {
         if (!ulong.TryParse(GuildId, out var gid) || gid == 0)
         {
             Message = "GuildId must be a valid non-zero number.";
             MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
-        }
-
-        ulong chId = 0;
-        if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
-            (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
-        {
-            Message = "Announcement Channel ID must be a valid non-zero number (or leave it blank to disable announcements).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
-            return Page();
-        }
-
-        if (!TimeOnly.TryParse(AnnounceTime, out var t))
-        {
-            Message = "Announcement time must be a valid time (HH:mm).";
-            MessageKind = "warning";
-            await ReloadTokenFlagAsync();
+            await ReloadTokenFlagsAsync();
             return Page();
         }
 
         await _settings.SaveDiscordConfigAsync(Token, gid, RegisterToGuild);
-        await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
-        await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
-
-        await _settings.SaveHuggingFaceTokenAsync(HuggingFaceToken);
-
-        if (ResetPurposePromptHistory)
-            await _settings.ResetPurposePromptSeenAsync();
-
-        Message = ResetPurposePromptHistory
-            ? "Saved. The bot will connect (or reconnect) automatically within a few seconds. Purpose prompt history was reset."
-            : "Saved. The bot will connect (or reconnect) automatically within a few seconds.";
+        Message = "Discord settings saved. The bot will connect (or reconnect) automatically within a few seconds.";
         MessageKind = "success";
 
         Token = null; // never echo back
-        HuggingFaceToken = null; // never echo back
-        ResetPurposePromptHistory = false;
-        await ReloadTokenFlagAsync();
+        await ReloadTokenFlagsAsync();
 
         await OnGetAsync();
 
@@ -105,7 +77,7 @@ public class SetupModel : PageModel
         {
             Message = "Announcement Channel ID must be a valid non-zero number (or leave blank to disable).";
             MessageKind = "warning";
-            await ReloadTokenFlagAsync();
+            await ReloadTokenFlagsAsync();
             return Page();
         }
 
@@ -113,7 +85,7 @@ public class SetupModel : PageModel
         {
             Message = "Announcement time must be a valid time (HH:mm).";
             MessageKind = "warning";
-            await ReloadTokenFlagAsync();
+            await ReloadTokenFlagsAsync();
             return Page();
         }
 
@@ -135,13 +107,13 @@ public class SetupModel : PageModel
         return Page();
     }
 
-    public async Task<IActionResult> OnPostTestAsync()
+    public async Task<IActionResult> OnPostTestDiscordAsync()
     {
         if (!ulong.TryParse(GuildId, out var gid) || gid == 0)
         {
             Message = "Enter a valid GuildId first.";
             MessageKind = "warning";
-            await ReloadTokenFlagAsync();
+            await ReloadTokenFlagsAsync();
             return Page();
         }
 
@@ -152,7 +124,7 @@ public class SetupModel : PageModel
         {
             Message = "No token to test. Paste a token (or save one first).";
             MessageKind = "warning";
-            await ReloadTokenFlagAsync();
+            await ReloadTokenFlagsAsync();
             return Page();
         }
 
@@ -184,7 +156,7 @@ public class SetupModel : PageModel
         catch (Discord.Net.HttpException hex)
         {
             MessageKind = "danger";
-            Message = $"Discord API error: {hex.HttpCode} � {hex.Message}";
+            Message = $"Discord API error: {hex.HttpCode} - {hex.Message}";
         }
         catch (Exception ex)
         {
@@ -194,15 +166,143 @@ public class SetupModel : PageModel
         finally
         {
             Token = null; // never echo
-            await ReloadTokenFlagAsync();
+            await ReloadTokenFlagsAsync();
         }
 
         return Page();
     }
 
-    private async Task ReloadTokenFlagAsync()
+    public async Task<IActionResult> OnPostSaveHuggingFaceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(HuggingFaceToken))
+        {
+            Message = "No Hugging Face token entered. Existing token unchanged.";
+            MessageKind = "warning";
+            await ReloadTokenFlagsAsync();
+            await OnGetAsync();
+            return Page();
+        }
+
+        await _settings.SaveHuggingFaceTokenAsync(HuggingFaceToken);
+        HuggingFaceToken = null;
+        Message = "Hugging Face token saved.";
+        MessageKind = "success";
+        await ReloadTokenFlagsAsync();
+        await OnGetAsync();
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostTestHuggingFaceAsync()
+    {
+        var storedToken = await _settings.GetHuggingFaceTokenAsync();
+        var tokenToTest = !string.IsNullOrWhiteSpace(HuggingFaceToken) ? HuggingFaceToken!.Trim() : storedToken;
+
+        if (string.IsNullOrWhiteSpace(tokenToTest))
+        {
+            Message = "No Hugging Face token to test. Paste one or save one first.";
+            MessageKind = "warning";
+            await ReloadTokenFlagsAsync();
+            return Page();
+        }
+
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenToTest);
+
+            var whoami = await http.GetAsync("https://huggingface.co/api/whoami-v2");
+            if (!whoami.IsSuccessStatusCode)
+            {
+                Message = "Token was rejected by Hugging Face. Confirm token type/scope and try again.";
+                MessageKind = "danger";
+                await ReloadTokenFlagsAsync();
+                return Page();
+            }
+
+            var modelAccess = await http.GetAsync("https://huggingface.co/pyannote/speaker-diarization-3.1/resolve/main/README.md");
+            if (modelAccess.IsSuccessStatusCode)
+            {
+                Message = "Hugging Face token test succeeded, including pyannote model access.";
+                MessageKind = "success";
+            }
+            else if (modelAccess.StatusCode == HttpStatusCode.Unauthorized || modelAccess.StatusCode == HttpStatusCode.Forbidden)
+            {
+                Message = "Token is valid, but pyannote model access was denied. Accept the model terms on Hugging Face first.";
+                MessageKind = "warning";
+            }
+            else
+            {
+                Message = $"Token is valid, but pyannote model access check returned {(int)modelAccess.StatusCode}.";
+                MessageKind = "warning";
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"Hugging Face test failed: {ex.Message}";
+            MessageKind = "danger";
+        }
+        finally
+        {
+            HuggingFaceToken = null;
+            await ReloadTokenFlagsAsync();
+        }
+
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostAutosaveAsync(string scope)
+    {
+        try
+        {
+            switch ((scope ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case "announcements":
+                {
+                    ulong chId = 0;
+                    if (!string.IsNullOrWhiteSpace(AnnounceChannelId) &&
+                        (!ulong.TryParse(AnnounceChannelId, out chId) || chId == 0))
+                    {
+                        return new JsonResult(new { ok = false, message = "Announcement Channel ID must be valid or blank." }) { StatusCode = 400 };
+                    }
+
+                    if (!TimeOnly.TryParse(AnnounceTime, out var t))
+                    {
+                        return new JsonResult(new { ok = false, message = "Announcement time must be HH:mm." }) { StatusCode = 400 };
+                    }
+
+                    await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
+                    return new JsonResult(new { ok = true, message = "Announcements saved." });
+                }
+                case "autoadvance":
+                    await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
+                    return new JsonResult(new { ok = true, message = "Auto-advance saved." });
+                case "bang":
+                    if (ResetPurposePromptHistory)
+                    {
+                        await _settings.ResetPurposePromptSeenAsync();
+                    }
+
+                    return new JsonResult(new
+                    {
+                        ok = true,
+                        message = ResetPurposePromptHistory
+                            ? "Prompt history reset."
+                            : "Bang settings saved."
+                    });
+                default:
+                    return new JsonResult(new { ok = false, message = "Unknown autosave scope." }) { StatusCode = 400 };
+            }
+        }
+        catch (Exception ex)
+        {
+            return new JsonResult(new { ok = false, message = ex.Message }) { StatusCode = 500 };
+        }
+    }
+
+    private async Task ReloadTokenFlagsAsync()
     {
         var (token, _, _) = await _settings.GetDiscordConfigAsync();
         HasToken = !string.IsNullOrWhiteSpace(token);
+        HasHuggingFaceToken = await _settings.HasHuggingFaceTokenAsync();
     }
 }

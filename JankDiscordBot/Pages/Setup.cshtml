@@ -8,83 +8,117 @@
     </div>
 </div>
 
-<div class="card shadow-sm">
-    <div class="card-body">
+@if (!string.IsNullOrWhiteSpace(Model.Message))
+{
+    <div class="alert alert-@Model.MessageKind mb-3">@Model.Message</div>
+}
 
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
-            @if (Model.HasToken)
-            {
-                <span class="badge bg-success">Token stored</span>
-                <span class="text-white-50 small">Stored encrypted in SQLite. Leave the box blank to keep it.</span>
-            }
-            else
-            {
-                <span class="badge bg-warning text-dark">Token not set</span>
-                <span class="text-white-50 small">Paste a bot token below and click Save.</span>
-            }
-        </div>
+<div class="row g-3">
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="mb-1">Discord token</h5>
+                <div class="text-white-50 small mb-3">These controls only affect Discord bot auth/settings.</div>
 
-        @if (!string.IsNullOrWhiteSpace(Model.Message))
-        {
-            <div class="alert alert-@Model.MessageKind mb-3">@Model.Message</div>
-        }
-
-        <form method="post" asp-antiforgery="false" class="row g-3">
-            <div class="col-12">
-                <label class="form-label">Guild ID</label>
-                <input class="form-control" name="GuildId" value="@Model.GuildId" />
-            </div>
-
-            <div class="col-12">
-                <label class="form-label">Bot Token</label>
-                <input class="form-control"
-                       name="Token"
-                       type="password"
-                       value=""
-                       placeholder="@(Model.HasToken ? "Token already set — leave blank to keep" : "Paste bot token")" />
-            </div>
-
-            <div class="col-12">
-                <label class="form-label">HuggingFace Token</label>
-                @if (Model.HasHuggingFaceToken)
-                {
-                    <span class="badge bg-success ms-1 mb-1">Token stored</span>
-                }
-                else
-                {
-                    <span class="badge bg-warning text-dark ms-1 mb-1">Not set</span>
-                }
-                <input class="form-control"
-                       name="HuggingFaceToken"
-                       type="password"
-                       value=""
-                       placeholder="@(Model.HasHuggingFaceToken ? "HF token stored — leave blank to keep" : "Paste HuggingFace token (needed for speaker diarization)")" />
-                <div class="form-text text-white-50">
-                    Required for WhisperX speaker diarization. Get one at <code>huggingface.co/settings/tokens</code>.
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    @if (Model.HasToken)
+                    {
+                        <span class="badge bg-success">Token stored</span>
+                        <span class="text-white-50 small">Stored encrypted in SQLite.</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-warning text-dark">Token not set</span>
+                        <span class="text-white-50 small">Paste a bot token below and click Save.</span>
+                    }
                 </div>
+
+                <form method="post" asp-antiforgery="false" class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label">Guild ID</label>
+                        <input class="form-control" name="GuildId" value="@Model.GuildId" />
+                    </div>
+
+                    <div class="col-12 form-check">
+                        <input class="form-check-input" type="checkbox" name="RegisterToGuild" value="true" @(Model.RegisterToGuild ? "checked" : "") />
+                        <label class="form-check-label">Register commands to this guild (fast updates)</label>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label">Bot Token</label>
+                        <input class="form-control"
+                               name="Token"
+                               type="password"
+                               value=""
+                               placeholder="@(Model.HasToken ? "Token already set - leave blank to keep" : "Paste bot token")" />
+                    </div>
+
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button class="btn btn-primary" type="submit" asp-page-handler="SaveDiscord">Save Discord</button>
+                        <button class="btn btn-outline-info" type="submit" asp-page-handler="TestDiscord">Test Discord</button>
+                    </div>
+                </form>
             </div>
+        </div>
+    </div>
 
-            <div class="col-12 form-check">
-                <input class="form-check-input" type="checkbox" name="RegisterToGuild" value="true" @(Model.RegisterToGuild ? "checked" : "") />
-                <label class="form-check-label">Register commands to this guild (fast updates)</label>
+    <div class="col-12 col-xl-6">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h5 class="mb-1">Hugging Face token</h5>
+                <div class="text-white-50 small mb-3">Used by WhisperX for speaker diarization.</div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    @if (Model.HasHuggingFaceToken)
+                    {
+                        <span class="badge bg-success">Token stored</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-warning text-dark">Token not set</span>
+                    }
+                    <span class="text-white-50 small">Get one at huggingface.co/settings/tokens</span>
+                </div>
+
+                <form method="post" asp-antiforgery="false" class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label">HuggingFace Token</label>
+                        <input class="form-control"
+                               name="HuggingFaceToken"
+                               type="password"
+                               value=""
+                               placeholder="@(Model.HasHuggingFaceToken ? "HF token already set - leave blank to keep" : "Paste HuggingFace token")" />
+                    </div>
+
+                    <div class="col-12 d-flex flex-wrap gap-2">
+                        <button class="btn btn-primary" type="submit" asp-page-handler="SaveHuggingFace">Save Hugging Face</button>
+                        <button class="btn btn-outline-info" type="submit" asp-page-handler="TestHuggingFace">Test Hugging Face</button>
+                    </div>
+                </form>
             </div>
+        </div>
+    </div>
+</div>
 
-            <hr class="border-secondary" />
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <h5 class="mb-1">Announcements</h5>
+        <div class="text-white-50 small mb-3">Autosaves when you leave a field.</div>
 
-            <h5 class="mb-1">Announcements</h5>
-            <div class="text-white-50 small mb-3">Morning post about tonight’s session + assignments.</div>
+        <form method="post" asp-antiforgery="false" class="row g-3" data-autosave-form="true">
+            <input type="hidden" name="scope" value="announcements" />
 
             <div class="col-12">
                 <label class="form-label">Announcement Channel ID</label>
-                <input class="form-control" name="AnnounceChannelId" value="@Model.AnnounceChannelId" />
+                <input class="form-control" name="AnnounceChannelId" value="@Model.AnnounceChannelId" data-autosave="true" />
                 <div class="form-text text-white-50">
-                    Enable Developer Mode in Discord → right-click the channel → Copy ID
+                    Enable Developer Mode in Discord -> right-click the channel -> Copy ID
                 </div>
             </div>
 
             <div class="col-12 col-md-6">
                 <label class="form-label">Announcement time</label>
-                <input class="form-control" type="time" name="AnnounceTime" value="@Model.AnnounceTime" />
+                <input class="form-control" type="time" name="AnnounceTime" value="@Model.AnnounceTime" data-autosave="true" />
             </div>
 
             <div class="col-12 d-flex flex-wrap gap-2">
@@ -93,46 +127,92 @@
                 </button>
             </div>
             <div class="form-text text-white-50">
-                Sends a test message to the configured announcement channel
-            </div>
-
-            <hr class="border-secondary" />
-
-            <h5 class="mb-1">Auto-advance</h5>
-            <div class="text-white-50 small mb-3">
-                Automatically advances DM/Food after session start time if not cancelled.
-            </div>
-
-            <div class="col-12 col-md-6">
-                <label class="form-label">Advance minutes after start</label>
-                <input class="form-control" type="number" min="0" max="1440" name="AutoAdvanceMinutesAfterStart" value="@Model.AutoAdvanceMinutesAfterStart" />
-                <div class="form-text text-white-50">Example: 60 means advance one hour after start.</div>
-            </div>
-
-            <hr class="border-secondary" />
-
-            <h5 class="mb-1">Bang commands</h5>
-            <div class="text-white-50 small mb-3">
-                One-off command behavior and reset controls.
-            </div>
-
-            <div class="col-12 form-check">
-                <input class="form-check-input" type="checkbox" name="ResetPurposePromptHistory" value="true" @(Model.ResetPurposePromptHistory ? "checked" : "") />
-                <label class="form-check-label">Reset the one-off “What’s my purpose?” prompt history when saving</label>
-                <div class="form-text text-white-50">Check this once, click Save, then leave it unchecked until you want to allow that prompt to happen again.</div>
-            </div>
-
-            <div class="col-12 d-flex flex-wrap gap-2">
-                <button class="btn btn-primary" type="submit">Save</button>
-
-                <button class="btn btn-outline-info"
-                        type="submit"
-                        asp-page-handler="Test">
-                    Test
-                </button>
-
-                <a class="btn btn-outline-secondary" href="/Rosters">Rosters</a>
+                Sends a test message to the configured announcement channel.
             </div>
         </form>
     </div>
 </div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <h5 class="mb-1">Auto-advance</h5>
+        <div class="text-white-50 small mb-3">Autosaves when you leave the field.</div>
+
+        <form method="post" asp-antiforgery="false" class="row g-3" data-autosave-form="true">
+            <input type="hidden" name="scope" value="autoadvance" />
+
+            <div class="col-12 col-md-6">
+                <label class="form-label">Advance minutes after start</label>
+                <input class="form-control" type="number" min="0" max="1440" name="AutoAdvanceMinutesAfterStart" value="@Model.AutoAdvanceMinutesAfterStart" data-autosave="true" />
+                <div class="form-text text-white-50">Example: 60 means advance one hour after start.</div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <h5 class="mb-1">Bang commands</h5>
+        <div class="text-white-50 small mb-3">Autosaves when changed.</div>
+
+        <form method="post" asp-antiforgery="false" class="row g-3" data-autosave-form="true">
+            <input type="hidden" name="scope" value="bang" />
+
+            <div class="col-12 form-check">
+                <input class="form-check-input" type="checkbox" name="ResetPurposePromptHistory" value="true" @(Model.ResetPurposePromptHistory ? "checked" : "") data-autosave="true" />
+                <label class="form-check-label">Reset the one-off "What's my purpose?" prompt history</label>
+                <div class="form-text text-white-50">Check once to reset; it autosaves immediately.</div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="mt-3">
+    <a class="btn btn-outline-secondary" href="/Rosters">Rosters</a>
+</div>
+
+<script>
+(() => {
+    const timers = new WeakMap();
+    const autosaveForms = document.querySelectorAll("form[data-autosave-form='true']");
+
+    async function autosave(form) {
+        try {
+            const body = new FormData(form);
+            const response = await fetch(`${window.location.pathname}?handler=Autosave`, {
+                method: "POST",
+                body
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.warn("Autosave failed:", errorText);
+            }
+        } catch (err) {
+            console.warn("Autosave request failed:", err);
+        }
+    }
+
+    function scheduleAutosave(form) {
+        const existing = timers.get(form);
+        if (existing) {
+            clearTimeout(existing);
+        }
+
+        const next = setTimeout(() => {
+            autosave(form);
+            timers.delete(form);
+        }, 250);
+
+        timers.set(form, next);
+    }
+
+    autosaveForms.forEach((form) => {
+        const fields = form.querySelectorAll("[data-autosave='true']");
+        fields.forEach((field) => {
+            field.addEventListener("blur", () => scheduleAutosave(form));
+            field.addEventListener("change", () => scheduleAutosave(form));
+        });
+    });
+})();
+</script>

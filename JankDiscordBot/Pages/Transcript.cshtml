@@ -269,8 +269,9 @@
                     }
                 </div>
 
-                <div class="alert alert-warning @(Model.SelectedSession?.Error is { Length: > 0 } ? "" : "d-none")" id="sessionErrorBanner">
-                    @Model.SelectedSession?.Error
+                <div class="alert alert-warning d-flex align-items-start justify-content-between gap-2 @(Model.SelectedSession?.Error is { Length: > 0 } ? "" : "d-none")" id="sessionErrorBanner">
+                    <div class="flex-grow-1" id="sessionErrorText">@Model.SelectedSession?.Error</div>
+                    <button type="button" class="btn btn-sm btn-outline-dark" id="copySessionErrorBtn">Copy</button>
                 </div>
 
                 <div class="transcript-shell">
@@ -309,6 +310,8 @@
         const feed = document.getElementById('transcriptFeed');
         const statusBadge = document.getElementById('sessionStatusBadge');
         const errorBanner = document.getElementById('sessionErrorBanner');
+        const errorText = document.getElementById('sessionErrorText');
+        const copySessionErrorBtn = document.getElementById('copySessionErrorBtn');
         const mappingGrid = document.getElementById('speakerMappingGrid');
         const optionsTemplateElement = document.getElementById('playerOptionsTemplate');
         const memberOptionsTemplate = optionsTemplateElement ? optionsTemplateElement.innerHTML : '<option value="">Unassigned</option>';
@@ -478,10 +481,22 @@
 
             if (payload.error) {
                 errorBanner.classList.remove('d-none');
-                errorBanner.textContent = payload.error;
+                if (errorText) {
+                    errorText.textContent = payload.error;
+                }
+
+                if (copySessionErrorBtn) {
+                    copySessionErrorBtn.disabled = false;
+                }
             } else {
                 errorBanner.classList.add('d-none');
-                errorBanner.textContent = '';
+                if (errorText) {
+                    errorText.textContent = '';
+                }
+
+                if (copySessionErrorBtn) {
+                    copySessionErrorBtn.disabled = true;
+                }
             }
         };
 
@@ -912,6 +927,22 @@
         if (stopRecordingBtn) {
             stopRecordingBtn.addEventListener('click', async () => {
                 await stopWorkflow();
+            });
+        }
+
+        if (copySessionErrorBtn) {
+            copySessionErrorBtn.addEventListener('click', async () => {
+                const message = (errorText?.textContent || '').trim();
+                if (!message) {
+                    return;
+                }
+
+                try {
+                    await navigator.clipboard.writeText(message);
+                    setBrowserStatus('Session error copied to clipboard.');
+                } catch {
+                    setBrowserStatus('Could not copy error text. Clipboard access was denied.');
+                }
             });
         }
 

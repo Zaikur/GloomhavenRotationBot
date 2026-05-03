@@ -328,6 +328,20 @@ public sealed class GameplayTranscriptionService
 
             await AppendRunLogAsync(sessionDir, chunkBase, command, exitCode, stdout, stderr, ct);
 
+            if (exitCode == 127 && !OperatingSystem.IsWindows())
+            {
+                var retryCommand = ReplaceLeadingPythonWithPython3(command);
+                if (!string.Equals(retryCommand, command, StringComparison.Ordinal))
+                {
+                    var retryResult = await RunShellCommandAsync(retryCommand, hfToken, ct);
+                    exitCode = retryResult.ExitCode;
+                    stdout = retryResult.StdOut;
+                    stderr = retryResult.StdErr;
+
+                    await AppendRunLogAsync(sessionDir, $"{chunkBase}-retry", retryCommand, exitCode, stdout, stderr, ct);
+                }
+            }
+
             if (exitCode != 0)
             {
                 var detail = FirstNonEmptyLine(stderr) ?? FirstNonEmptyLine(stdout);
@@ -563,6 +577,21 @@ public sealed class GameplayTranscriptionService
     {
         var escaped = value.Replace("\\", "\\\\").Replace("\"", "\\\"");
         return $"\"{escaped}\"";
+    }
+
+    private static string ReplaceLeadingPythonWithPython3(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return command;
+
+        var trimmed = command.TrimStart();
+        if (!trimmed.StartsWith("python ", StringComparison.OrdinalIgnoreCase))
+            return command;
+
+        var leadingWhitespaceLength = command.Length - trimmed.Length;
+        var leadingWhitespace = leadingWhitespaceLength > 0 ? command[..leadingWhitespaceLength] : string.Empty;
+        var tail = trimmed["python ".Length..];
+        return $"{leadingWhitespace}python3 {tail}";
     }
 
     private static string ResolveChunkExtension(string? originalFileName)

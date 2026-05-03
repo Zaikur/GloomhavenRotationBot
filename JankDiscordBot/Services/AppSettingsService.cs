@@ -184,7 +184,10 @@ public sealed class AppSettingsService
 
     public async Task<(string CommandTemplate, string RootPath)> GetTranscriptionConfigAsync()
     {
-        var commandTemplate = (await _repo.GetSettingAsync(KeyTranscriptCommandTemplate))?.Trim() ?? string.Empty;
+        var commandTemplate = (await _repo.GetSettingAsync(KeyTranscriptCommandTemplate))?.Trim();
+        if (string.IsNullOrWhiteSpace(commandTemplate))
+            commandTemplate = GameplayTranscriptionService.DefaultCommandTemplate;
+
         var rootPath = (await _repo.GetSettingAsync(KeyTranscriptRootPath))?.Trim() ?? "data/transcripts";
         return (commandTemplate, rootPath);
     }

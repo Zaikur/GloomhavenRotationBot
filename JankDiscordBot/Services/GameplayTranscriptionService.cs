@@ -311,7 +311,11 @@ public sealed class GameplayTranscriptionService
         {
             var (commandTemplate, _) = await _settings.GetTranscriptionConfigAsync();
             if (string.IsNullOrWhiteSpace(commandTemplate))
+            {
+                await SetSessionErrorAsync(sessionId, "Transcription command template is empty. Save it in Transcript settings.", ct);
+                _log.LogWarning("Skipping transcription for {SessionId} because command template is empty.", sessionId);
                 return;
+            }
 
             var chunkIndex = ExtractChunkIndex(chunkPath);
             var chunkBase = Path.GetFileNameWithoutExtension(chunkPath);
@@ -326,7 +330,12 @@ public sealed class GameplayTranscriptionService
 
             if (exitCode != 0)
             {
-                await SetSessionErrorAsync(sessionId, $"Chunk {chunkBase} failed with exit {exitCode}.", ct);
+                var detail = FirstNonEmptyLine(stderr) ?? FirstNonEmptyLine(stdout);
+                var message = string.IsNullOrWhiteSpace(detail)
+                    ? $"Chunk {chunkBase} failed with exit {exitCode}."
+                    : $"Chunk {chunkBase} failed with exit {exitCode}: {detail}";
+
+                await SetSessionErrorAsync(sessionId, message, ct);
                 return;
             }
 
@@ -595,5 +604,20 @@ public sealed class GameplayTranscriptionService
             return value.GetDouble();
 
         return double.TryParse(value.ToString(), out var parsed) ? parsed : null;
+    }
+
+    private static string? FirstNonEmptyLine(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        foreach (var line in value.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+                return trimmed;
+        }
+
+        return null;
     }
 }

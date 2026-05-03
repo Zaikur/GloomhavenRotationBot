@@ -97,7 +97,7 @@ Generic bang behavior:
 
 - Broadcast page sends a one-off message to the configured announcement channel exactly as entered
 - Supports Discord markdown, emoji syntax, mentions, and line breaks
-- Live gameplay transcription records from the local microphone in background chunks
+- Live gameplay transcription captures audio from the browser (for example, a laptop in the room) and uploads background chunks to the server
 - Chunk output is processed with your configured local command template (for example WhisperX)
 - Speaker labels are normalized as `Speaker 1`, `Speaker 2`, etc. and can be mapped to roster members at any time
 - Transcript page shows live chat-style output in its own scrollable window
@@ -166,7 +166,7 @@ dotnet run --project JankDiscordBot
 Optional transcript setup:
 
 6. Open Transcript and set a local transcription command template (for example WhisperX).
-7. Start a transcript session before game time and stop it when done.
+7. Start a transcript session, then click **Start Laptop Mic** in that page from the device whose microphone you want to use.
 8. Use Transcript History to review past sessions and map speakers to players.
 
 The bot monitors the saved SQLite settings and reconnects automatically after you save changes.
@@ -303,3 +303,4 @@ In the default transcript configuration, transcript session folders live under `
 - Check transcript session `run.log` in the session folder for command errors.
 - Verify the expected speaker count is reasonable for the number of people present.
 - WhisperX diarization may require a Hugging Face token depending on the selected model/pipeline.
+- If recording from another device, keep that Transcript page open and confirm browser microphone permission is allowed.

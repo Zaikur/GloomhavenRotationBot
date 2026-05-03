@@ -79,6 +79,20 @@ public class TranscriptModel : PageModel
         return RedirectToPage(new { sessionId, message = msg, kind = ok ? "success" : "warning" });
     }
 
+    public async Task<IActionResult> OnPostUploadChunkAsync(string sessionId, IFormFile? audioChunk)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return new JsonResult(new { ok = false, message = "Missing session id." }) { StatusCode = 400 };
+
+        if (audioChunk == null || audioChunk.Length == 0)
+            return new JsonResult(new { ok = false, message = "Missing audio chunk." }) { StatusCode = 400 };
+
+        await using var stream = audioChunk.OpenReadStream();
+        var (ok, msg) = await _transcription.UploadChunkAsync(sessionId, stream, audioChunk.FileName, HttpContext.RequestAborted);
+
+        return new JsonResult(new { ok, message = msg }) { StatusCode = ok ? 200 : 400 };
+    }
+
     public async Task<IActionResult> OnPostAssignSpeakerAsync(string sessionId, string speaker, string? playerId)
     {
         ulong? id = null;

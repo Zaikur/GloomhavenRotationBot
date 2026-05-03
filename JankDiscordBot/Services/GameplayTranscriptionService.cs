@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text.Json;
-using NAudio.Wave;
 
 namespace GloomhavenRotationBot.Services;
 
@@ -38,18 +36,11 @@ public sealed class GameplayTranscriptionService
     private readonly SemaphoreSlim _processLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    private WaveInEvent? _waveIn;
-    private WaveFileWriter? _writer;
-    private string? _currentChunkPath;
     private string? _activeRoot;
     private string? _activeSessionDir;
     private string? _activeSessionId;
     private int _nextChunkIndex;
     private int _activeExpectedSpeakers;
-    private bool _stopRequested;
-    private TaskCompletionSource<bool>? _recordingStopped;
-    private CancellationTokenSource? _chunkLoopCts;
-    private Task? _chunkLoopTask;
     private readonly List<Task> _processingTasks = new();
 
     public GameplayTranscriptionService(AppSettingsService settings, ILogger<GameplayTranscriptionService> log)
@@ -65,16 +56,17 @@ public sealed class GameplayTranscriptionService
     {
         expectedSpeakers = Math.Clamp(expectedSpeakers, 1, 12);
 
-        var (commandTemplate, rootPath) = await _settings.GetTranscriptionConfigAsync();
+        var (_, rootPath) = await _settings.GetTranscriptionConfigAsync();
         var root = ResolveAbsolutePath(rootPath);
         Directory.CreateDirectory(root);
 
         string sessionId;
         string sessionDir;
+
         lock (_sync)
         {
             if (_activeSessionId != null)
-                return (false, "A transcription session is already recording.");
+                return (false, "A transcription session is already active.");
 
             sessionId = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}"[..24];
             sessionDir = Path.Combine(root, sessionId);
@@ -84,9 +76,6 @@ public sealed class GameplayTranscriptionService
             _activeSessionDir = sessionDir;
             _activeExpectedSpeakers = expectedSpeakers;
             _nextChunkIndex = 0;
-            _stopRequested = false;
-            _recordingStopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _chunkLoopCts = new CancellationTokenSource();
             _processingTasks.Clear();
         }
 
@@ -102,133 +91,33 @@ public sealed class GameplayTranscriptionService
             StartedUtc: DateTime.UtcNow,
             EndedUtc: null,
             ExpectedSpeakers: expectedSpeakers,
-            Status: string.IsNullOrWhiteSpace(commandTemplate) ? "Recording" : "RecordingLive",
+            Status: "RecordingRemote",
             AudioFilePath: Path.Combine(sessionDir, "chunks"),
             Error: null,
             UpdatedUtc: DateTime.UtcNow);
 
         await SaveSessionAsync(session, root, ct);
 
-        try
-        {
-            var waveIn = new WaveInEvent
-            {
-                WaveFormat = new WaveFormat(16000, 16, 1),
-                BufferMilliseconds = 200
-            };
-
-            var firstChunk = BuildChunkPath(sessionDir, 0);
-            var writer = new WaveFileWriter(firstChunk, waveIn.WaveFormat);
-
-            waveIn.DataAvailable += (_, args) =>
-            {
-                lock (_sync)
-                {
-                    _writer?.Write(args.Buffer, 0, args.BytesRecorded);
-                    _writer?.Flush();
-                }
-            };
-
-            waveIn.RecordingStopped += (_, args) =>
-            {
-                lock (_sync)
-                {
-                    _waveIn?.Dispose();
-                    _waveIn = null;
-
-                    _recordingStopped?.TrySetResult(true);
-                }
-
-                if (args.Exception != null)
-                    _log.LogError(args.Exception, "Microphone recording stopped with an error.");
-            };
-
-            lock (_sync)
-            {
-                _waveIn = waveIn;
-                _writer = writer;
-                _currentChunkPath = firstChunk;
-            }
-
-            waveIn.StartRecording();
-
-            _chunkLoopTask = Task.Run(() => ChunkLoopAsync(sessionId, _chunkLoopCts!.Token), CancellationToken.None);
-
-            if (string.IsNullOrWhiteSpace(commandTemplate))
-                return (true, "Recording started. Configure a transcription command to enable live chunk processing.");
-
-            return (true, "Recording started with live chunk processing.");
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Failed to start microphone recording.");
-
-            lock (_sync)
-            {
-                _activeSessionId = null;
-                _activeRoot = null;
-                _activeSessionDir = null;
-                _currentChunkPath = null;
-                _chunkLoopCts?.Cancel();
-                _recordingStopped?.TrySetResult(true);
-            }
-
-            var failed = session with
-            {
-                EndedUtc = DateTime.UtcNow,
-                Status = "Failed",
-                Error = $"Microphone could not start: {ex.Message}",
-                UpdatedUtc = DateTime.UtcNow
-            };
-
-            await SaveSessionAsync(failed, root, ct);
-            return (false, failed.Error!);
-        }
+        return (true, "Session started. Click Start Laptop Mic in this page to stream audio chunks.");
     }
 
     public async Task<(bool Ok, string Message)> StopSessionAsync(CancellationToken ct = default)
     {
         string? sessionId;
-        TaskCompletionSource<bool>? stoppedSignal;
-        Task? chunkLoopTask;
-        CancellationTokenSource? chunkLoopCts;
+        string? root;
 
         lock (_sync)
         {
             sessionId = _activeSessionId;
-            stoppedSignal = _recordingStopped;
-            chunkLoopTask = _chunkLoopTask;
-            chunkLoopCts = _chunkLoopCts;
+            root = _activeRoot;
 
             if (sessionId == null)
                 return (false, "No active recording session.");
 
             _activeSessionId = null;
-            _stopRequested = true;
+            _activeRoot = null;
+            _activeSessionDir = null;
         }
-
-        chunkLoopCts?.Cancel();
-
-        try
-        {
-            _waveIn?.StopRecording();
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Error while stopping microphone recording.");
-        }
-
-        if (stoppedSignal != null)
-            await stoppedSignal.Task.WaitAsync(ct);
-
-        if (chunkLoopTask != null)
-        {
-            try { await chunkLoopTask; } catch (OperationCanceledException) { }
-        }
-
-        var lastChunkTask = RotateChunkAsync(startNewChunk: false, queueForProcessing: true, ct);
-        if (lastChunkTask != null)
-            await lastChunkTask;
 
         Task[] pending;
         lock (_sync)
@@ -239,12 +128,11 @@ public sealed class GameplayTranscriptionService
         if (pending.Length > 0)
             await Task.WhenAll(pending);
 
-        var (session, root) = await TryGetSessionAsync(sessionId, ct);
+        var (session, resolvedRoot) = await TryGetSessionAsync(sessionId, ct);
         if (session == null)
             return (false, "Session metadata could not be found.");
 
         var finalStatus = string.IsNullOrWhiteSpace(session.Error) ? "Completed" : "CompletedWithWarnings";
-
         var completed = session with
         {
             EndedUtc = DateTime.UtcNow,
@@ -252,20 +140,48 @@ public sealed class GameplayTranscriptionService
             UpdatedUtc = DateTime.UtcNow
         };
 
-        await SaveSessionAsync(completed, root!, ct);
+        await SaveSessionAsync(completed, resolvedRoot ?? root!, ct);
+        return (true, "Recording stopped. Final chunk processing completed.");
+    }
+
+    public async Task<(bool Ok, string Message)> UploadChunkAsync(string sessionId, Stream chunkStream, string? originalFileName, CancellationToken ct = default)
+    {
+        string? activeId;
+        string? sessionDir;
+        int expectedSpeakers;
+        int chunkIndex;
 
         lock (_sync)
         {
-            _activeRoot = null;
-            _activeSessionDir = null;
-            _currentChunkPath = null;
-            _chunkLoopCts?.Dispose();
-            _chunkLoopCts = null;
-            _chunkLoopTask = null;
-            _recordingStopped = null;
+            activeId = _activeSessionId;
+            sessionDir = _activeSessionDir;
+            expectedSpeakers = _activeExpectedSpeakers;
+
+            if (activeId == null || sessionDir == null)
+                return (false, "No active session for uploads.");
+
+            if (!string.Equals(activeId, sessionId, StringComparison.Ordinal))
+                return (false, "Upload session does not match the active session.");
+
+            chunkIndex = _nextChunkIndex++;
         }
 
-        return (true, "Recording stopped. Final chunk processing completed.");
+        var extension = ResolveChunkExtension(originalFileName);
+        var chunkPath = Path.Combine(sessionDir, "chunks", $"chunk-{chunkIndex:D5}{extension}");
+
+        await using (var fs = File.Create(chunkPath))
+        {
+            await chunkStream.CopyToAsync(fs, ct);
+        }
+
+        var fi = new FileInfo(chunkPath);
+        if (!fi.Exists || fi.Length == 0)
+            return (false, "Uploaded audio chunk was empty.");
+
+        var processTask = ProcessChunkAsync(sessionId, sessionDir, chunkPath, expectedSpeakers, CancellationToken.None);
+        TrackProcessingTask(processTask);
+
+        return (true, $"Accepted chunk {chunkIndex:D5}.");
     }
 
     public async Task<TranscriptSessionState?> GetActiveSessionAsync(CancellationToken ct = default)
@@ -372,82 +288,6 @@ public sealed class GameplayTranscriptionService
         await File.WriteAllTextAsync(mapPath, json, ct);
     }
 
-    private async Task ChunkLoopAsync(string sessionId, CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(ChunkSeconds), ct);
-
-                Task? processTask = null;
-                lock (_sync)
-                {
-                    if (_activeSessionId != sessionId || _stopRequested)
-                        return;
-                }
-
-                processTask = RotateChunkAsync(startNewChunk: true, queueForProcessing: true, ct);
-                if (processTask != null)
-                    await processTask;
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Chunk loop failed for {SessionId}", sessionId);
-                await SetSessionErrorAsync(sessionId, $"Live chunking error: {ex.Message}", CancellationToken.None);
-            }
-        }
-    }
-
-    private Task? RotateChunkAsync(bool startNewChunk, bool queueForProcessing, CancellationToken ct)
-    {
-        WaveFileWriter? oldWriter = null;
-        string? closedChunkPath = null;
-        string? sessionId = null;
-        string? sessionDir = null;
-        int expectedSpeakers = 0;
-
-        lock (_sync)
-        {
-            if (_activeSessionId == null || _activeSessionDir == null || _writer == null)
-                return null;
-
-            sessionId = _activeSessionId;
-            sessionDir = _activeSessionDir;
-            expectedSpeakers = _activeExpectedSpeakers;
-
-            oldWriter = _writer;
-            closedChunkPath = _currentChunkPath;
-            _writer = null;
-            _currentChunkPath = null;
-
-            if (startNewChunk && _waveIn != null && !_stopRequested)
-            {
-                _nextChunkIndex++;
-                var nextPath = BuildChunkPath(sessionDir, _nextChunkIndex);
-                _writer = new WaveFileWriter(nextPath, _waveIn.WaveFormat);
-                _currentChunkPath = nextPath;
-            }
-        }
-
-        oldWriter?.Dispose();
-
-        if (!queueForProcessing || string.IsNullOrWhiteSpace(closedChunkPath) || !File.Exists(closedChunkPath))
-            return null;
-
-        var fi = new FileInfo(closedChunkPath);
-        if (fi.Length <= 44)
-            return null;
-
-        var task = ProcessChunkAsync(sessionId!, sessionDir!, closedChunkPath, expectedSpeakers, ct);
-        TrackProcessingTask(task);
-        return task;
-    }
-
     private void TrackProcessingTask(Task task)
     {
         lock (_sync)
@@ -490,7 +330,7 @@ public sealed class GameplayTranscriptionService
                 return;
             }
 
-            var newSegments = await ParseChunkSegmentsAsync(sessionId, sessionDir, outputDir, chunkIndex, ct);
+            var newSegments = await ParseChunkSegmentsAsync(sessionDir, outputDir, chunkIndex, ct);
             if (newSegments.Count == 0)
                 return;
 
@@ -508,7 +348,6 @@ public sealed class GameplayTranscriptionService
     }
 
     private async Task<List<TranscriptSegment>> ParseChunkSegmentsAsync(
-        string sessionId,
         string sessionDir,
         string outputDir,
         int chunkIndex,
@@ -631,21 +470,6 @@ public sealed class GameplayTranscriptionService
         await SaveSessionAsync(updated, root, ct);
     }
 
-    private static string BuildChunkPath(string sessionDir, int chunkIndex)
-        => Path.Combine(sessionDir, "chunks", $"chunk-{chunkIndex:D5}.wav");
-
-    private static int ExtractChunkIndex(string chunkPath)
-    {
-        var name = Path.GetFileNameWithoutExtension(chunkPath);
-        var dash = name.LastIndexOf("-", StringComparison.Ordinal);
-        if (dash < 0)
-            return 0;
-
-        return int.TryParse(name[(dash + 1)..], out var parsed)
-            ? Math.Max(0, parsed)
-            : 0;
-    }
-
     private async Task SaveSessionAsync(TranscriptSessionState session, string root, CancellationToken ct)
     {
         var dir = Path.Combine(root, session.SessionId);
@@ -680,7 +504,7 @@ public sealed class GameplayTranscriptionService
 
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunShellCommandAsync(string command, string? hfToken, CancellationToken ct)
     {
-        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        var isWindows = OperatingSystem.IsWindows();
         var shell = isWindows ? "cmd.exe" : "/bin/bash";
         var shellArgs = isWindows ? $"/C {command}" : $"-lc {QuoteForShell(command)}";
 
@@ -709,6 +533,18 @@ public sealed class GameplayTranscriptionService
         return (process.ExitCode, stdOut, stdErr);
     }
 
+    private static int ExtractChunkIndex(string chunkPath)
+    {
+        var name = Path.GetFileNameWithoutExtension(chunkPath);
+        var dash = name.LastIndexOf("-", StringComparison.Ordinal);
+        if (dash < 0)
+            return 0;
+
+        return int.TryParse(name[(dash + 1)..], out var parsed)
+            ? Math.Max(0, parsed)
+            : 0;
+    }
+
     private static string ResolveAbsolutePath(string path)
         => Path.IsPathRooted(path)
             ? path
@@ -718,6 +554,18 @@ public sealed class GameplayTranscriptionService
     {
         var escaped = value.Replace("\\", "\\\\").Replace("\"", "\\\"");
         return $"\"{escaped}\"";
+    }
+
+    private static string ResolveChunkExtension(string? originalFileName)
+    {
+        var ext = Path.GetExtension(originalFileName ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(ext))
+            return ".webm";
+
+        ext = ext.Trim().ToLowerInvariant();
+        return ext is ".wav" or ".webm" or ".ogg" or ".mp3" or ".m4a" or ".mp4"
+            ? ext
+            : ".webm";
     }
 
     private static string? TryGetString(JsonElement element, string property)

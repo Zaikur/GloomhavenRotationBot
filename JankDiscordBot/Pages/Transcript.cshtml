@@ -120,8 +120,14 @@
 
                 <form method="post" asp-page-handler="Stop" asp-antiforgery="false">
                     <input type="hidden" name="sessionId" value="@Model.SelectedSessionId" />
-                    <button class="btn btn-outline-warning w-100" type="submit" @(Model.ActiveSession is null ? "disabled" : null)>Stop + Process</button>
+                    <button class="btn btn-outline-warning w-100" id="stopProcessBtn" type="submit" @(Model.ActiveSession is null ? "disabled" : null)>Stop + Process</button>
                 </form>
+
+                <div class="mt-2 d-grid gap-2">
+                    <button class="btn btn-success" id="startBrowserMicBtn" type="button" @(Model.ActiveSession is null ? "disabled" : null)>Start Laptop Mic</button>
+                    <button class="btn btn-outline-secondary" id="stopBrowserMicBtn" type="button" disabled>Stop Laptop Mic</button>
+                    <div class="small text-white-50" id="browserMicStatus">Laptop mic idle.</div>
+                </div>
 
                 <hr class="border-secondary" />
 
@@ -279,6 +285,8 @@
 <script>
     (() => {
         const selectedSessionId = '@Model.SelectedSessionId';
+        const activeSessionId = '@Model.ActiveSession?.SessionId';
+        const chunkSeconds = @GloomhavenRotationBot.Services.GameplayTranscriptionService.ChunkSeconds;
         if (!selectedSessionId) {
             return;
         }
@@ -289,6 +297,15 @@
         const mappingGrid = document.getElementById('speakerMappingGrid');
         const optionsTemplateElement = document.getElementById('playerOptionsTemplate');
         const memberOptionsTemplate = optionsTemplateElement ? optionsTemplateElement.innerHTML : '<option value="">Unassigned</option>';
+        const startBrowserMicBtn = document.getElementById('startBrowserMicBtn');
+        const stopBrowserMicBtn = document.getElementById('stopBrowserMicBtn');
+        const browserMicStatus = document.getElementById('browserMicStatus');
+        const stopProcessBtn = document.getElementById('stopProcessBtn');
+
+        let mediaStream = null;
+        let mediaRecorder = null;
+        let chunkCounter = 0;
+        let uploadChain = Promise.resolve();
 
         const renderTime = (seconds) => {
             const total = Math.max(0, Math.floor(seconds));
@@ -415,6 +432,10 @@
                 statusBadge.textContent = payload.status;
             }
 
+            if (payload.status && (payload.status.startsWith('Completed') || payload.status === 'Failed')) {
+                stopBrowserMic();
+            }
+
             if (!errorBanner) return;
 
             if (payload.error) {
@@ -442,6 +463,119 @@
             }
         };
 
+        const setBrowserStatus = (text) => {
+            if (browserMicStatus) {
+                browserMicStatus.textContent = text;
+            }
+        };
+
+        const setBrowserButtons = (isRecording) => {
+            if (startBrowserMicBtn) {
+                startBrowserMicBtn.disabled = isRecording || activeSessionId !== selectedSessionId;
+            }
+
+            if (stopBrowserMicBtn) {
+                stopBrowserMicBtn.disabled = !isRecording;
+            }
+        };
+
+        const uploadChunk = async (blob) => {
+            if (!(blob instanceof Blob) || blob.size === 0) {
+                return;
+            }
+
+            const fd = new FormData();
+            const fileName = `chunk-${String(chunkCounter).padStart(5, '0')}.webm`;
+            chunkCounter += 1;
+
+            fd.append('sessionId', selectedSessionId);
+            fd.append('audioChunk', blob, fileName);
+
+            const response = await fetch('/Transcript?handler=UploadChunk', {
+                method: 'POST',
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            if (!response.ok) {
+                let msg = `Upload failed (${response.status}).`;
+                try {
+                    const json = await response.json();
+                    if (json && json.message) {
+                        msg = json.message;
+                    }
+                } catch {
+                    // Keep generic error message.
+                }
+
+                throw new Error(msg);
+            }
+        };
+
+        const enqueueUpload = (blob) => {
+            uploadChain = uploadChain
+                .then(() => uploadChunk(blob))
+                .catch((err) => {
+                    setBrowserStatus(`Mic upload error: ${err.message || 'unknown error'}`);
+                });
+        };
+
+        const startBrowserMic = async () => {
+            if (activeSessionId !== selectedSessionId) {
+                setBrowserStatus('Select the active session before starting laptop mic.');
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+                setBrowserStatus('This browser does not support microphone capture uploads.');
+                return;
+            }
+
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                return;
+            }
+
+            const preferredMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '');
+
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = preferredMime
+                    ? new MediaRecorder(mediaStream, { mimeType: preferredMime })
+                    : new MediaRecorder(mediaStream);
+
+                mediaRecorder.ondataavailable = (evt) => {
+                    if (evt.data && evt.data.size > 0) {
+                        enqueueUpload(evt.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    setBrowserButtons(false);
+                    setBrowserStatus('Laptop mic stopped.');
+                };
+
+                mediaRecorder.start(chunkSeconds * 1000);
+                setBrowserButtons(true);
+                setBrowserStatus('Laptop mic recording and streaming chunks...');
+            } catch (err) {
+                setBrowserButtons(false);
+                setBrowserStatus(`Could not start laptop mic: ${err.message || 'permission denied'}`);
+            }
+        };
+
+        const stopBrowserMic = () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach((track) => track.stop());
+                mediaStream = null;
+            }
+        };
+
         const submitMappingForm = async (form) => {
             const data = new FormData(form);
             try {
@@ -462,6 +596,32 @@
                 select.addEventListener('change', () => submitMappingForm(form));
             }
         });
+
+        if (startBrowserMicBtn) {
+            startBrowserMicBtn.addEventListener('click', async () => {
+                await startBrowserMic();
+            });
+        }
+
+        if (stopBrowserMicBtn) {
+            stopBrowserMicBtn.addEventListener('click', () => {
+                stopBrowserMic();
+            });
+        }
+
+        if (stopProcessBtn) {
+            stopProcessBtn.addEventListener('click', async (evt) => {
+                evt.preventDefault();
+                stopBrowserMic();
+                await uploadChain;
+                const stopForm = stopProcessBtn.closest('form');
+                if (stopForm) {
+                    stopForm.submit();
+                }
+            });
+        }
+
+        setBrowserButtons(false);
 
         scrollToBottom();
         refreshLive();

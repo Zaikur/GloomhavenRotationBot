@@ -35,6 +35,7 @@ public sealed class GameplayTranscriptionService
     private readonly object _sync = new();
     private readonly SemaphoreSlim _processLock = new(1, 1);
     private readonly JsonSerializerOptions _jsonOpts = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private readonly object _modelCacheSync = new();
 
     private string? _activeRoot;
     private string? _activeSessionDir;
@@ -59,6 +60,7 @@ public sealed class GameplayTranscriptionService
 
     private volatile ModelCacheState _modelCacheState = ModelCacheState.Unknown;
     private string? _modelDownloadError;
+    private string? _resolvedModelCacheRoot;
 
     public ModelCacheState GetModelCacheState() => _modelCacheState;
     public string? GetModelDownloadError() => _modelDownloadError;
@@ -77,14 +79,15 @@ public sealed class GameplayTranscriptionService
 
         var (commandTemplate, _) = await _settings.GetTranscriptionConfigAsync();
         var modelName = ParseModelName(commandTemplate);
-        var hubDir = "/app/data/ml-cache/huggingface/hub";
+        var cacheRoot = ResolveModelCacheRoot();
+        var hubDir = Path.Combine(cacheRoot, "huggingface", "hub");
         var whisperDir = Path.Combine(hubDir, $"models--Systran--faster-whisper-{modelName}");
         _modelCacheState = Directory.Exists(whisperDir) ? ModelCacheState.Ready : ModelCacheState.Unknown;
         return _modelCacheState;
     }
 
     /// <summary>Starts a background task that downloads the configured Whisper (and optionally diarization) models.</summary>
-    public async Task StartModelDownloadAsync()
+    public async Task StartModelDownloadAsync(bool forceRedownload = false)
     {
         if (_modelCacheState is ModelCacheState.Downloading)
             return;
@@ -95,6 +98,11 @@ public sealed class GameplayTranscriptionService
         var (commandTemplate, _) = await _settings.GetTranscriptionConfigAsync();
         var modelName = ParseModelName(commandTemplate);
         var hfToken = await _settings.GetHuggingFaceTokenAsync();
+        var cacheRoot = ResolveModelCacheRoot();
+        var modelDirHint = Path.Combine(cacheRoot, "huggingface", "hub", $"models--Systran--faster-whisper-{modelName}");
+
+        if (forceRedownload)
+            TryDeleteModelDirectory(modelDirHint);
 
         _ = Task.Run(async () =>
         {
@@ -124,7 +132,7 @@ print("Done.", flush=True)
 """);
 
                 var (exitCode, stdout, stderr) = await RunShellCommandAsync(
-                    $"{python} {scriptPath}", hfToken, CancellationToken.None);
+                    $"{python} {scriptPath}", hfToken, cacheRoot, CancellationToken.None);
 
                 _log.LogInformation("Model download stdout: {Stdout}", stdout);
                 if (!string.IsNullOrWhiteSpace(stderr))
@@ -428,7 +436,7 @@ print("Done.", flush=True)
 
             var command = BuildCommand(commandTemplate, chunkPath, outputDir, expectedSpeakers, sessionId);
             var hfToken = await _settings.GetHuggingFaceTokenAsync();
-            var (exitCode, stdout, stderr) = await RunShellCommandAsync(command, hfToken, ct);
+            var (exitCode, stdout, stderr) = await RunShellCommandAsync(command, hfToken, ResolveModelCacheRoot(), ct);
 
             await AppendRunLogAsync(sessionDir, chunkBase, command, exitCode, stdout, stderr, ct);
 
@@ -437,7 +445,7 @@ print("Done.", flush=True)
                 var retryCommand = ReplaceLeadingPythonWithPython3(command);
                 if (!string.Equals(retryCommand, command, StringComparison.Ordinal))
                 {
-                    var retryResult = await RunShellCommandAsync(retryCommand, hfToken, ct);
+                    var retryResult = await RunShellCommandAsync(retryCommand, hfToken, ResolveModelCacheRoot(), ct);
                     exitCode = retryResult.ExitCode;
                     stdout = retryResult.StdOut;
                     stderr = retryResult.StdErr;
@@ -480,42 +488,51 @@ print("Done.", flush=True)
         int chunkIndex,
         CancellationToken ct)
     {
-        var jsonPath = Directory.GetFiles(outputDir, "*.json", SearchOption.TopDirectoryOnly).FirstOrDefault();
-        if (jsonPath == null)
-            return new();
+        var jsonFiles = Directory.GetFiles(outputDir, "*.json", SearchOption.TopDirectoryOnly)
+            .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        var raw = await File.ReadAllTextAsync(jsonPath, ct);
-        using var doc = JsonDocument.Parse(raw);
-
-        if (!doc.RootElement.TryGetProperty("segments", out var segmentsEl) || segmentsEl.ValueKind != JsonValueKind.Array)
+        if (jsonFiles.Count == 0)
             return new();
 
         var aliases = await ReadSpeakerAliasesAsync(sessionDir, ct);
         var normalized = new List<TranscriptSegment>();
         var chunkOffset = chunkIndex * ChunkSeconds;
 
-        foreach (var seg in segmentsEl.EnumerateArray())
+        foreach (var jsonPath in jsonFiles)
         {
-            var start = TryGetDouble(seg, "start");
-            var end = TryGetDouble(seg, "end");
-            var text = TryGetString(seg, "text")?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(text))
+            var raw = await File.ReadAllTextAsync(jsonPath, ct);
+
+            using var doc = JsonDocument.Parse(raw);
+            if (!doc.RootElement.TryGetProperty("segments", out var segmentsEl) || segmentsEl.ValueKind != JsonValueKind.Array)
                 continue;
 
-            var rawSpeaker = TryGetString(seg, "speaker");
-            if (string.IsNullOrWhiteSpace(rawSpeaker))
-                rawSpeaker = "UNKNOWN";
-
-            if (!aliases.TryGetValue(rawSpeaker, out var speakerLabel))
+            foreach (var seg in segmentsEl.EnumerateArray())
             {
-                speakerLabel = $"Speaker {aliases.Count + 1}";
-                aliases[rawSpeaker] = speakerLabel;
+                var start = TryGetDouble(seg, "start");
+                var end = TryGetDouble(seg, "end");
+                var text = TryGetString(seg, "text")?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
+
+                var rawSpeaker = TryGetString(seg, "speaker");
+                if (string.IsNullOrWhiteSpace(rawSpeaker))
+                    rawSpeaker = "UNKNOWN";
+
+                if (!aliases.TryGetValue(rawSpeaker, out var speakerLabel))
+                {
+                    speakerLabel = $"Speaker {aliases.Count + 1}";
+                    aliases[rawSpeaker] = speakerLabel;
+                }
+
+                var confidence = TryGetDoubleNullable(seg, "confidence")
+                    ?? TryGetDoubleNullable(seg, "avg_logprob");
+
+                normalized.Add(new TranscriptSegment(chunkOffset + start, chunkOffset + end, speakerLabel, text, confidence));
             }
 
-            var confidence = TryGetDoubleNullable(seg, "confidence")
-                ?? TryGetDoubleNullable(seg, "avg_logprob");
-
-            normalized.Add(new TranscriptSegment(chunkOffset + start, chunkOffset + end, speakerLabel, text, confidence));
+            if (normalized.Count > 0)
+                break;
         }
 
         await WriteSpeakerAliasesAsync(sessionDir, aliases, ct);
@@ -653,7 +670,7 @@ print("Done.", flush=True)
         return command;
     }
 
-    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunShellCommandAsync(string command, string? hfToken, CancellationToken ct)
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunShellCommandAsync(string command, string? hfToken, string modelCacheRoot, CancellationToken ct)
     {
         var isWindows = OperatingSystem.IsWindows();
         var shell = isWindows ? "cmd.exe" : "/bin/bash";
@@ -677,7 +694,7 @@ print("Done.", flush=True)
             // Redirect all Python/ML tool cache and config dirs to the app data directory so they:
             //   1) survive container restarts (models don't need to re-download), and
             //   2) are writable by non-root users like 568:568 without touching /.config or ~/.cache.
-            const string mlCache = "/app/data/ml-cache";
+            var mlCache = modelCacheRoot;
             psi.Environment["MPLCONFIGDIR"] = mlCache + "/matplotlib";
             psi.Environment["XDG_CONFIG_HOME"] = mlCache + "/xdg-config";
             psi.Environment["NUMBA_CACHE_DIR"] = mlCache + "/numba";
@@ -811,5 +828,63 @@ print("Done.", flush=True)
         }
 
         return null;
+    }
+
+    private string ResolveModelCacheRoot()
+    {
+        if (OperatingSystem.IsWindows())
+            return Path.GetTempPath();
+
+        lock (_modelCacheSync)
+        {
+            if (!string.IsNullOrWhiteSpace(_resolvedModelCacheRoot))
+                return _resolvedModelCacheRoot;
+
+            const string preferred = "/app/data/ml-cache";
+            const string fallback = "/tmp/gloomhaven-ml-cache";
+
+            if (CanWriteDirectory(preferred))
+            {
+                _resolvedModelCacheRoot = preferred;
+                return _resolvedModelCacheRoot;
+            }
+
+            Directory.CreateDirectory(fallback);
+            _resolvedModelCacheRoot = fallback;
+            _log.LogWarning("Model cache root {Preferred} was not writable. Falling back to {Fallback}.", preferred, fallback);
+            return _resolvedModelCacheRoot;
+        }
+    }
+
+    private void TryDeleteModelDirectory(string modelDir)
+    {
+        try
+        {
+            if (!Directory.Exists(modelDir))
+                return;
+
+            Directory.Delete(modelDir, recursive: true);
+            _log.LogInformation("Deleted existing model cache directory {ModelDir} before re-download.", modelDir);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Could not delete model cache directory {ModelDir}. Continuing with download attempt.", modelDir);
+        }
+    }
+
+    private static bool CanWriteDirectory(string path)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+            var probe = Path.Combine(path, $".probe-{Guid.NewGuid():N}");
+            File.WriteAllText(probe, "ok");
+            File.Delete(probe);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

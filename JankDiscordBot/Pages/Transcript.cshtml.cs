@@ -64,10 +64,10 @@ public class TranscriptModel : PageModel
         await LoadAsync(sessionId, HttpContext.RequestAborted);
     }
 
-    public async Task<IActionResult> OnPostDownloadModelsAsync()
+    public async Task<IActionResult> OnPostDownloadModelsAsync(bool force = false)
     {
-        await _transcription.StartModelDownloadAsync();
-        return new JsonResult(new { ok = true, state = "Downloading" });
+        await _transcription.StartModelDownloadAsync(force);
+        return new JsonResult(new { ok = true, state = "Downloading", force });
     }
 
     public IActionResult OnGetModelStatusAsync()

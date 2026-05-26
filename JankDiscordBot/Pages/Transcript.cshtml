@@ -207,9 +207,17 @@
                             <span>Download Models</span>
                         }
                     </button>
+                    <button id="redownloadModelsBtn" type="button"
+                            class="btn btn-outline-warning"
+                            @(isDownloading ? "disabled" : null)>
+                        Re-download
+                    </button>
                     <span id="modelStatusText" class="small text-white-50">
                         @(isReady ? "Ready" : isDownloading ? "In progress" : cacheState == GameplayTranscriptionService.ModelCacheState.Failed ? "Failed" : "Not cached")
                     </span>
+                </div>
+                <div class="text-white-50 small mt-2">
+                    Re-download refreshes the model cache and can recover from partial or corrupted model files.
                 </div>
             </div>
         </div>
@@ -361,24 +369,44 @@
 
         // ── Model download ─────────────────────────────────────────────────────
         const downloadModelsBtn = document.getElementById('downloadModelsBtn');
+        const redownloadModelsBtn = document.getElementById('redownloadModelsBtn');
         const modelStatusText = document.getElementById('modelStatusText');
         let modelPollHandle = null;
 
         function setModelBtnReady() {
-            if (!downloadModelsBtn) return;
-            downloadModelsBtn.disabled = true;
-            downloadModelsBtn.className = 'btn btn-outline-secondary flex-grow-1';
-            downloadModelsBtn.innerHTML = '<span>Models Downloaded</span>';
+            if (downloadModelsBtn) {
+                downloadModelsBtn.disabled = true;
+                downloadModelsBtn.className = 'btn btn-outline-secondary flex-grow-1';
+                downloadModelsBtn.innerHTML = '<span>Models Downloaded</span>';
+            }
+            if (redownloadModelsBtn) {
+                redownloadModelsBtn.disabled = false;
+            }
             if (modelStatusText) modelStatusText.textContent = 'Ready';
             if (modelPollHandle) { clearInterval(modelPollHandle); modelPollHandle = null; }
         }
 
         function setModelBtnDownloading() {
-            if (!downloadModelsBtn) return;
-            downloadModelsBtn.disabled = true;
-            downloadModelsBtn.className = 'btn btn-outline-secondary flex-grow-1';
-            downloadModelsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span><span>Downloading\u2026</span>';
+            if (downloadModelsBtn) {
+                downloadModelsBtn.disabled = true;
+                downloadModelsBtn.className = 'btn btn-outline-secondary flex-grow-1';
+                downloadModelsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span><span>Downloading\u2026</span>';
+            }
+            if (redownloadModelsBtn) {
+                redownloadModelsBtn.disabled = true;
+            }
             if (modelStatusText) modelStatusText.textContent = 'In progress';
+        }
+
+        function setModelButtonsIdle() {
+            if (downloadModelsBtn) {
+                downloadModelsBtn.disabled = false;
+                downloadModelsBtn.className = 'btn btn-outline-success flex-grow-1';
+                downloadModelsBtn.innerHTML = '<span>Download Models</span>';
+            }
+            if (redownloadModelsBtn) {
+                redownloadModelsBtn.disabled = false;
+            }
         }
 
         async function pollModelStatus() {
@@ -396,28 +424,54 @@
                         downloadModelsBtn.className = 'btn btn-outline-danger flex-grow-1';
                         downloadModelsBtn.innerHTML = '<span>Retry Download</span>';
                     }
+                    if (redownloadModelsBtn) {
+                        redownloadModelsBtn.disabled = false;
+                    }
                     if (modelStatusText) modelStatusText.textContent = d.error || 'Failed';
+                    if (modelPollHandle) { clearInterval(modelPollHandle); modelPollHandle = null; }
+                } else {
+                    setModelButtonsIdle();
+                    if (modelStatusText) modelStatusText.textContent = 'Not cached';
                     if (modelPollHandle) { clearInterval(modelPollHandle); modelPollHandle = null; }
                 }
             } catch { /* ignore */ }
         }
 
+        async function startModelDownload(force) {
+            setModelBtnDownloading();
+            try {
+                const url = force
+                    ? '/Transcript?handler=DownloadModels&force=true'
+                    : '/Transcript?handler=DownloadModels';
+                await fetch(url, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'RequestVerificationToken': document.querySelector('meta[name="csrf-token"]')?.content ?? '' }
+                });
+            } catch {
+                setModelButtonsIdle();
+            }
+
+            if (modelPollHandle) {
+                clearInterval(modelPollHandle);
+            }
+            modelPollHandle = setInterval(pollModelStatus, 3000);
+        }
+
         if (downloadModelsBtn) {
             downloadModelsBtn.addEventListener('click', async () => {
-                setModelBtnDownloading();
-                try {
-                    await fetch('/Transcript?handler=DownloadModels', {
-                        method: 'POST',
-                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'RequestVerificationToken': document.querySelector('meta[name="csrf-token"]')?.content ?? '' }
-                    });
-                } catch { /* ignore — fire-and-forget */ }
-                modelPollHandle = setInterval(pollModelStatus, 3000);
+                await startModelDownload(false);
             });
 
             // If a download was already in progress when the page loaded, start polling.
             if (downloadModelsBtn.disabled && modelStatusText && modelStatusText.textContent.trim() === 'In progress') {
                 modelPollHandle = setInterval(pollModelStatus, 3000);
             }
+        }
+
+        if (redownloadModelsBtn) {
+            redownloadModelsBtn.addEventListener('click', async () => {
+                await startModelDownload(true);
+            });
         }
         const browserMicStatus = document.getElementById('browserMicStatus');
         const recordingElapsed = document.getElementById('recordingElapsed');

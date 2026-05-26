@@ -682,7 +682,6 @@ print("Done.", flush=True)
             psi.Environment["XDG_CONFIG_HOME"] = mlCache + "/xdg-config";
             psi.Environment["NUMBA_CACHE_DIR"] = mlCache + "/numba";
             psi.Environment["HF_HOME"] = mlCache + "/huggingface";
-            psi.Environment["TRANSFORMERS_CACHE"] = mlCache + "/huggingface/hub";
             psi.Environment["TORCH_HOME"] = mlCache + "/torch";
             psi.Environment["HOME"] = "/tmp";
         }

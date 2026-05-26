@@ -52,6 +52,8 @@ public sealed class GameplayTranscriptionService
     public static string DefaultCommandTemplate =>
         "whisperx {input} --model medium --language en --diarize --min_speakers {speakers} --max_speakers {speakers} --output_dir {output}";
 
+    private static readonly string? BundledWhisperxPath = ResolveBundledWhisperxPath();
+
     public async Task<(bool Ok, string Message)> StartSessionAsync(int expectedSpeakers, CancellationToken ct = default)
     {
         expectedSpeakers = Math.Clamp(expectedSpeakers, 1, 12);
@@ -518,11 +520,35 @@ public sealed class GameplayTranscriptionService
 
     private static string BuildCommand(string template, string inputPath, string outputDir, int speakers, string sessionId)
     {
-        return template
+        var command = template
             .Replace("{input}", QuoteForShell(inputPath), StringComparison.Ordinal)
             .Replace("{output}", QuoteForShell(outputDir), StringComparison.Ordinal)
             .Replace("{speakers}", speakers.ToString(), StringComparison.Ordinal)
             .Replace("{sessionId}", QuoteForShell(sessionId), StringComparison.Ordinal);
+
+        return NormalizeWhisperxCommand(command);
+    }
+
+    private static string NormalizeWhisperxCommand(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command) || string.IsNullOrWhiteSpace(BundledWhisperxPath))
+            return command;
+
+        var trimmed = command.TrimStart();
+        var leadingWhitespaceLength = command.Length - trimmed.Length;
+        var leadingWhitespace = leadingWhitespaceLength > 0 ? command[..leadingWhitespaceLength] : string.Empty;
+
+        if (trimmed.StartsWith("whisperx ", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{leadingWhitespace}{BundledWhisperxPath} {trimmed["whisperx ".Length..]}";
+        }
+
+        if (trimmed.Equals("whisperx", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{leadingWhitespace}{BundledWhisperxPath}";
+        }
+
+        return command;
     }
 
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunShellCommandAsync(string command, string? hfToken, CancellationToken ct)
@@ -543,6 +569,18 @@ public sealed class GameplayTranscriptionService
 
         if (!string.IsNullOrWhiteSpace(hfToken))
             psi.Environment["HUGGINGFACE_TOKEN"] = hfToken;
+
+        if (!string.IsNullOrWhiteSpace(BundledWhisperxPath))
+        {
+            var binDir = Path.GetDirectoryName(BundledWhisperxPath);
+            if (!string.IsNullOrWhiteSpace(binDir))
+            {
+                var existingPath = psi.Environment.TryGetValue("PATH", out var currentPath) ? currentPath : Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+                psi.Environment["PATH"] = string.IsNullOrWhiteSpace(existingPath)
+                    ? binDir
+                    : $"{binDir}:{existingPath}";
+            }
+        }
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("Could not start shell process.");
 
@@ -577,6 +615,15 @@ public sealed class GameplayTranscriptionService
     {
         var escaped = value.Replace("\\", "\\\\").Replace("\"", "\\\"");
         return $"\"{escaped}\"";
+    }
+
+    private static string? ResolveBundledWhisperxPath()
+    {
+        if (OperatingSystem.IsWindows())
+            return null;
+
+        var bundledPath = "/opt/whisperx-venv/bin/whisperx";
+        return File.Exists(bundledPath) ? bundledPath : null;
     }
 
     private static string ReplaceLeadingPythonWithPython3(string command)

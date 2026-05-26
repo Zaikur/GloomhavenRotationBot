@@ -165,7 +165,7 @@ dotnet run --project JankDiscordBot
 
 Optional transcript setup:
 
-6. Open Transcript and set a local transcription command template (for example WhisperX).
+6. Open Transcript and set a local transcription command template (for example the bundled `whisperx` CLI).
 7. Start a transcript session, then click **Start Laptop Mic** in that page from the device whose microphone you want to use.
 8. Use Transcript History to review past sessions and map speakers to players.
 
@@ -182,7 +182,7 @@ The container now includes transcript runtime dependencies:
 - `python3`
 - `pip`
 - `ffmpeg`
-- `whisperx` (Python package)
+- `whisperx` (CLI installed in the container virtual environment)
 
 ### Example compose / TrueNAS Custom App YAML
 
@@ -298,7 +298,7 @@ In the default transcript configuration, transcript session folders live under `
 ### Transcript is recording but no text appears
 
 - Make sure a valid transcription command template is saved on Transcript.
-- If you are using Docker image builds from this repo, Python/WhisperX/ffmpeg are already bundled.
+- If you are using Docker image builds from this repo, WhisperX/ffmpeg are already bundled and the default template uses the `whisperx` CLI from the container virtual environment.
 - For non-Docker runs, confirm required local dependencies for your command are installed.
 - Check transcript session `run.log` in the session folder for command errors.
 - Verify the expected speaker count is reasonable for the number of people present.

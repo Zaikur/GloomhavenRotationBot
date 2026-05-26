@@ -50,7 +50,7 @@ public sealed class GameplayTranscriptionService
     }
 
     public static string DefaultCommandTemplate =>
-        "python -m whisperx {input} --model medium --language en --diarize --min_speakers {speakers} --max_speakers {speakers} --output_dir {output}";
+        "whisperx {input} --model medium --language en --diarize --min_speakers {speakers} --max_speakers {speakers} --output_dir {output}";
 
     public async Task<(bool Ok, string Message)> StartSessionAsync(int expectedSpeakers, CancellationToken ct = default)
     {

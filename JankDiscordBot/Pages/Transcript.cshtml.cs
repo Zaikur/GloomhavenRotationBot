@@ -36,6 +36,9 @@ public class TranscriptModel : PageModel
     public Dictionary<string, TranscriptSpeakerAssignment> SpeakerAssignments { get; private set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<(ulong Id, string Name)> GuildMembers { get; private set; } = new();
 
+    public GameplayTranscriptionService.ModelCacheState ModelCacheState { get; private set; }
+    public string? ModelDownloadError { get; private set; }
+
     public string DisplaySpeaker(string speaker)
     {
         if (SpeakerAssignments.TryGetValue(speaker, out var assignment))
@@ -59,6 +62,19 @@ public class TranscriptModel : PageModel
         FlashMessage = message;
         FlashKind = kind is "success" or "warning" or "danger" ? kind : "info";
         await LoadAsync(sessionId, HttpContext.RequestAborted);
+    }
+
+    public async Task<IActionResult> OnPostDownloadModelsAsync()
+    {
+        await _transcription.StartModelDownloadAsync();
+        return new JsonResult(new { ok = true, state = "Downloading" });
+    }
+
+    public IActionResult OnGetModelStatusAsync()
+    {
+        var state = _transcription.GetModelCacheState();
+        var error = _transcription.GetModelDownloadError();
+        return new JsonResult(new { state = state.ToString(), error });
     }
 
     public async Task<IActionResult> OnPostSaveConfigAsync(string? sessionId)
@@ -199,6 +215,9 @@ public class TranscriptModel : PageModel
             ? GameplayTranscriptionService.DefaultCommandTemplate
             : template;
         RootPath = rootPath;
+
+        ModelCacheState = await _transcription.RefreshModelCacheStateAsync(ct);
+        ModelDownloadError = _transcription.GetModelDownloadError();
 
         SelectedSessionId = sessionId
             ?? ActiveSession?.SessionId

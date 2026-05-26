@@ -173,6 +173,44 @@
                     Recommended local command:<br />
                     <code>python -m whisperx {input} --model medium --language en --diarize --min_speakers {speakers} --max_speakers {speakers} --output_dir {output}</code>
                 </div>
+
+                <hr class="border-secondary" />
+
+                <h6>AI Models</h6>
+                <p class="text-white-50 small mb-2">
+                    WhisperX downloads the Whisper transcription model and the diarization model on first use, which can take several minutes. Pre-download them here so the first session doesn't stall.
+                </p>
+                @{
+                    var cacheState = Model.ModelCacheState;
+                    var isReady = cacheState == GameplayTranscriptionService.ModelCacheState.Ready;
+                    var isDownloading = cacheState == GameplayTranscriptionService.ModelCacheState.Downloading;
+                }
+                @if (!string.IsNullOrWhiteSpace(Model.ModelDownloadError))
+                {
+                    <div class="alert alert-warning small py-1 px-2 mb-2">@Model.ModelDownloadError</div>
+                }
+                <div class="d-flex align-items-center gap-2">
+                    <button id="downloadModelsBtn" type="button"
+                            class="btn @(isReady ? "btn-outline-secondary" : "btn-outline-success") flex-grow-1"
+                            @(isReady || isDownloading ? "disabled" : null)>
+                        @if (isReady)
+                        {
+                            <span>Models Downloaded</span>
+                        }
+                        else if (isDownloading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span>Downloading…</span>
+                        }
+                        else
+                        {
+                            <span>Download Models</span>
+                        }
+                    </button>
+                    <span id="modelStatusText" class="small text-white-50">
+                        @(isReady ? "Ready" : isDownloading ? "In progress" : cacheState == GameplayTranscriptionService.ModelCacheState.Failed ? "Failed" : "Not cached")
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -320,6 +358,67 @@
         const startRecordingBtn = document.getElementById('startRecordingBtn');
         const pauseRecordingBtn = document.getElementById('pauseRecordingBtn');
         const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+
+        // ── Model download ─────────────────────────────────────────────────────
+        const downloadModelsBtn = document.getElementById('downloadModelsBtn');
+        const modelStatusText = document.getElementById('modelStatusText');
+        let modelPollHandle = null;
+
+        function setModelBtnReady() {
+            if (!downloadModelsBtn) return;
+            downloadModelsBtn.disabled = true;
+            downloadModelsBtn.className = 'btn btn-outline-secondary flex-grow-1';
+            downloadModelsBtn.innerHTML = '<span>Models Downloaded</span>';
+            if (modelStatusText) modelStatusText.textContent = 'Ready';
+            if (modelPollHandle) { clearInterval(modelPollHandle); modelPollHandle = null; }
+        }
+
+        function setModelBtnDownloading() {
+            if (!downloadModelsBtn) return;
+            downloadModelsBtn.disabled = true;
+            downloadModelsBtn.className = 'btn btn-outline-secondary flex-grow-1';
+            downloadModelsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span><span>Downloading\u2026</span>';
+            if (modelStatusText) modelStatusText.textContent = 'In progress';
+        }
+
+        async function pollModelStatus() {
+            try {
+                const r = await fetch('/Transcript?handler=ModelStatus', { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+                if (!r.ok) return;
+                const d = await r.json();
+                if (d.state === 'Ready') {
+                    setModelBtnReady();
+                } else if (d.state === 'Downloading') {
+                    setModelBtnDownloading();
+                } else if (d.state === 'Failed') {
+                    if (downloadModelsBtn) {
+                        downloadModelsBtn.disabled = false;
+                        downloadModelsBtn.className = 'btn btn-outline-danger flex-grow-1';
+                        downloadModelsBtn.innerHTML = '<span>Retry Download</span>';
+                    }
+                    if (modelStatusText) modelStatusText.textContent = d.error || 'Failed';
+                    if (modelPollHandle) { clearInterval(modelPollHandle); modelPollHandle = null; }
+                }
+            } catch { /* ignore */ }
+        }
+
+        if (downloadModelsBtn) {
+            downloadModelsBtn.addEventListener('click', async () => {
+                setModelBtnDownloading();
+                try {
+                    await fetch('/Transcript?handler=DownloadModels', {
+                        method: 'POST',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest', 'RequestVerificationToken': document.querySelector('meta[name="csrf-token"]')?.content ?? '' }
+                    });
+                } catch { /* ignore — fire-and-forget */ }
+                modelPollHandle = setInterval(pollModelStatus, 3000);
+            });
+
+            // If a download was already in progress when the page loaded, start polling.
+            if (downloadModelsBtn.disabled && modelStatusText && modelStatusText.textContent.trim() === 'In progress') {
+                modelPollHandle = setInterval(pollModelStatus, 3000);
+            }
+        }
         const browserMicStatus = document.getElementById('browserMicStatus');
         const recordingElapsed = document.getElementById('recordingElapsed');
         const nextChunkCountdown = document.getElementById('nextChunkCountdown');

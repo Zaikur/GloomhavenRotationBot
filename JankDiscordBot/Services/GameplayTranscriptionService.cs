@@ -54,6 +54,108 @@ public sealed class GameplayTranscriptionService
 
     private static readonly string? BundledWhisperxPath = ResolveBundledWhisperxPath();
 
+    // ─── Model cache state ───────────────────────────────────────────────────────
+    public enum ModelCacheState { Unknown, Downloading, Ready, Failed }
+
+    private volatile ModelCacheState _modelCacheState = ModelCacheState.Unknown;
+    private string? _modelDownloadError;
+
+    public ModelCacheState GetModelCacheState() => _modelCacheState;
+    public string? GetModelDownloadError() => _modelDownloadError;
+
+    /// <summary>Checks the on-disk cache to determine if the configured Whisper model has been downloaded.</summary>
+    public async Task<ModelCacheState> RefreshModelCacheStateAsync(CancellationToken ct = default)
+    {
+        if (_modelCacheState is ModelCacheState.Downloading)
+            return _modelCacheState;
+
+        if (OperatingSystem.IsWindows())
+        {
+            _modelCacheState = ModelCacheState.Unknown;
+            return _modelCacheState;
+        }
+
+        var (commandTemplate, _) = await _settings.GetTranscriptionConfigAsync();
+        var modelName = ParseModelName(commandTemplate);
+        var hubDir = "/app/data/ml-cache/huggingface/hub";
+        var whisperDir = Path.Combine(hubDir, $"models--Systran--faster-whisper-{modelName}");
+        _modelCacheState = Directory.Exists(whisperDir) ? ModelCacheState.Ready : ModelCacheState.Unknown;
+        return _modelCacheState;
+    }
+
+    /// <summary>Starts a background task that downloads the configured Whisper (and optionally diarization) models.</summary>
+    public async Task StartModelDownloadAsync()
+    {
+        if (_modelCacheState is ModelCacheState.Downloading)
+            return;
+
+        _modelCacheState = ModelCacheState.Downloading;
+        _modelDownloadError = null;
+
+        var (commandTemplate, _) = await _settings.GetTranscriptionConfigAsync();
+        var modelName = ParseModelName(commandTemplate);
+        var hfToken = await _settings.GetHuggingFaceTokenAsync();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var python = File.Exists("/opt/whisperx-venv/bin/python3")
+                    ? "/opt/whisperx-venv/bin/python3"
+                    : "python3";
+
+                // Write a helper script to /tmp to avoid shell quoting issues with inline -c code.
+                const string scriptPath = "/tmp/glom_dl_models.py";
+                await File.WriteAllTextAsync(scriptPath, $"""
+import os, sys
+print("Downloading Whisper model '{modelName}'...", flush=True)
+from faster_whisper import WhisperModel
+WhisperModel("{modelName}")
+print("Whisper model ready.", flush=True)
+token = os.environ.get("HUGGINGFACE_TOKEN", "")
+if token:
+    print("Downloading diarization model...", flush=True)
+    from pyannote.audio import Pipeline
+    Pipeline.from_pretrained("pyannote/speaker-diarization-3.1", use_auth_token=token)
+    print("Diarization model ready.", flush=True)
+else:
+    print("No HUGGINGFACE_TOKEN set, skipping diarization model.", flush=True)
+print("Done.", flush=True)
+""");
+
+                var (exitCode, stdout, stderr) = await RunShellCommandAsync(
+                    $"{python} {scriptPath}", hfToken, CancellationToken.None);
+
+                _log.LogInformation("Model download stdout: {Stdout}", stdout);
+                if (!string.IsNullOrWhiteSpace(stderr))
+                    _log.LogInformation("Model download stderr: {Stderr}", stderr);
+
+                if (exitCode != 0)
+                {
+                    _modelDownloadError = FirstNonEmptyLine(stderr) ?? FirstNonEmptyLine(stdout) ?? "Model download failed.";
+                    _modelCacheState = ModelCacheState.Failed;
+                    _log.LogError("Model download failed (exit {Code}): {Error}", exitCode, _modelDownloadError);
+                    return;
+                }
+
+                _modelCacheState = ModelCacheState.Ready;
+                _log.LogInformation("Model download completed successfully.");
+            }
+            catch (Exception ex)
+            {
+                _modelDownloadError = ex.Message;
+                _modelCacheState = ModelCacheState.Failed;
+                _log.LogError(ex, "Model download threw an exception.");
+            }
+        }, CancellationToken.None);
+    }
+
+    private static string ParseModelName(string commandTemplate)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(commandTemplate, @"--model\s+(\S+)");
+        return m.Success ? m.Groups[1].Value : "medium";
+    }
+
     public async Task<(bool Ok, string Message)> StartSessionAsync(int expectedSpeakers, CancellationToken ct = default)
     {
         expectedSpeakers = Math.Clamp(expectedSpeakers, 1, 12);
@@ -569,6 +671,21 @@ public sealed class GameplayTranscriptionService
 
         if (!string.IsNullOrWhiteSpace(hfToken))
             psi.Environment["HUGGINGFACE_TOKEN"] = hfToken;
+
+        if (!OperatingSystem.IsWindows())
+        {
+            // Redirect all Python/ML tool cache and config dirs to the app data directory so they:
+            //   1) survive container restarts (models don't need to re-download), and
+            //   2) are writable by non-root users like 568:568 without touching /.config or ~/.cache.
+            const string mlCache = "/app/data/ml-cache";
+            psi.Environment["MPLCONFIGDIR"] = mlCache + "/matplotlib";
+            psi.Environment["XDG_CONFIG_HOME"] = mlCache + "/xdg-config";
+            psi.Environment["NUMBA_CACHE_DIR"] = mlCache + "/numba";
+            psi.Environment["HF_HOME"] = mlCache + "/huggingface";
+            psi.Environment["TRANSFORMERS_CACHE"] = mlCache + "/huggingface/hub";
+            psi.Environment["TORCH_HOME"] = mlCache + "/torch";
+            psi.Environment["HOME"] = "/tmp";
+        }
 
         if (!string.IsNullOrWhiteSpace(BundledWhisperxPath))
         {

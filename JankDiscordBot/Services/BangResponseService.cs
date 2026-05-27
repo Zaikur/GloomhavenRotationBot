@@ -32,12 +32,44 @@ public sealed class BangResponseService
         "🎂 It is technically your birthday month, {0}, so accept this begrudging recognition."
     };
 
-    private static readonly string[] NotActuallyBirthdayResponses =
+    private static readonly string[] BirthdayRollPrompts =
     {
-        "🚫🎂 It's not your birthday, try again later.",
-        "🙅 Nice try, but the birthday council says no.",
-        "📅 Your birthday claim has been rejected. Please resubmit in one year.",
-        "❌ No, you cannot have a birthday year-round. That's just not how they work."
+        "Hmmm... It's not your birthday month. Tell you what, we'll roll for it. 🎲",
+        "Not your birthday month. But hey, let's see if the RNG gods are feeling generous. 🎲",
+        "I see what you're doing. It's not your birthday month. Wanna roll for it though? 🎲",
+        "Nice try. Not your birthday month. But I'll let you roll the dice on it. 🎲",
+        "Nope, not your month. But you know what? Let's gamble. Roll for it. 🎲"
+    };
+
+    private static readonly string[] BirthdayRollCritFailResponses =
+    {
+        "LIAR!!!! I'm putting {0} in timeout! 🚫🎂",
+        "OH NO YOU DIDN'T! Timeout for {0}! Nobody talk to them, they're in timeout! 🚫",
+        "CAUGHT RED-HANDED! {0} is now in timeout! Don't encourage them! 🚫⏰",
+        "THAT'S IT! {0} is in timeout! You've crossed the line! 🚫😤",
+        "ABSOLUTELY NOT! {0} gets timeout! Don't test me! 🚫🎂"
+    };
+
+    private static readonly string[] BirthdayRollNeutralResponses =
+    {
+        "Nope. Not today.",
+        "The dice have spoken. It's a no.",
+        "Better luck next time, {0}.",
+        "Not in the cards for you right now.",
+        "The birthday gods have rejected {0}'s petition.",
+        "The RNG has decided: hard pass.",
+        "Close, but not close enough.",
+        "The universe says no thank you.",
+        "Not quite, {0}. Keep it moving."
+    };
+
+    private static readonly string[] BirthdayRollSuccessResponses =
+    {
+        "🎉🎂 WHOA! The dice gods have spoken! Congratulations, {0}! You somehow have a birthday today! 🎂🎉",
+        "🚨🎂 JACKPOT! Against all odds, {0} has won themselves a birthday! Everybody celebrate! 🎉",
+        "📣 INCREDIBLE! The RNG has blessed {0}! It is now officially their birthday! 🥳🎈",
+        "🎈 BY THE GRACE OF THE DICE! Happy magical birthday, {0}! 🎉✨",
+        "🎯 CRITICAL SUCCESS! The birthday gods have smiled upon {0}! Happy birthday! 🎂🎉"
     };
 
     private static readonly string[] BeanFacts =
@@ -94,6 +126,17 @@ public sealed class BangResponseService
         "You came in loud, but not especially effective."
     };
 
+    private static readonly string[] TimeoutInsultResponses =
+    {
+        "Oh, so now you want to insult me, {0}? That's just adding fuel to the fire, buddy.",
+        "Wow, real mature, {0}. Your timeout just got more interesting.",
+        "Bold strategy, {0}. Let's see how that works out for you.",
+        "Nice language, {0}. That's definitely helping your case.",
+        "Classy move, {0}. Really classy.",
+        "I appreciate the passion, {0}, but the timeout appreciates it more.",
+        "No, fuck you {0}."
+    };
+
     private static readonly Regex PurposeAnswerPattern = new(
         @"(?:^\s*|[.!?][\""'”’)\]]*\s+)(you\b|you're\b|you are\b|to\b|your purpose is\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -107,18 +150,65 @@ public sealed class BangResponseService
         _schedule = schedule;
     }
 
+    public async Task<(string Prompt, BirthdayRollResult Roll)> GetBirthdayRollAsync(ulong userId, string username)
+    {
+        var birthday = await _repo.GetBirthdayAsync(userId);
+        
+        // If no birthday on file, no rolling - just deny
+        if (birthday == null)
+        {
+            return ("🚫🎂 It's not your birthday, try again later.", new BirthdayRollResult(0, null));
+        }
+
+        var today = DateOnly.FromDateTime(await _schedule.LocalNowAsync());
+        
+        // If it IS their birthday (day, week, or month), don't roll - just return the appropriate message
+        if (birthday.Value.Month == today.Month)
+        {
+            var effectiveBirthdayDay = Math.Min(birthday.Value.Day, DateTime.DaysInMonth(today.Year, birthday.Value.Month));
+
+            if (today.Day == effectiveBirthdayDay)
+                return (string.Format(Pick(BirthdayDayResponses), username), new BirthdayRollResult(0, null));
+
+            if (today.Day < effectiveBirthdayDay && effectiveBirthdayDay - today.Day <= 6)
+                return (string.Format(Pick(BirthdayWeekResponses), username), new BirthdayRollResult(0, null));
+
+            return (string.Format(Pick(BirthdayMonthResponses), username), new BirthdayRollResult(0, null));
+        }
+
+        // NOT their birthday month - roll the dice
+        var prompt = Pick(BirthdayRollPrompts);
+        var roll = Random.Shared.Next(1, 21); // D20 roll (1-20)
+
+        string response;
+        if (roll <= 5)
+        {
+            response = string.Format(Pick(BirthdayRollCritFailResponses), username);
+        }
+        else if (roll >= 15)
+        {
+            response = string.Format(Pick(BirthdayRollSuccessResponses), username);
+        }
+        else
+        {
+            response = string.Format(Pick(BirthdayRollNeutralResponses), username);
+        }
+
+        return (prompt, new BirthdayRollResult(roll, response));
+    }
+
     public async Task<string> GetBirthdayResponseAsync(ulong userId, string username)
     {
         var birthday = await _repo.GetBirthdayAsync(userId);
         if (birthday == null)
         {
-            return Pick(NotActuallyBirthdayResponses);
+            return "🚫🎂 It's not your birthday, try again later.";
         }
 
         var today = DateOnly.FromDateTime(await _schedule.LocalNowAsync());
         if (birthday.Value.Month != today.Month)
         {
-            return Pick(NotActuallyBirthdayResponses);
+            return "🚫🎂 It's not your birthday, try again later.";
         }
 
         var effectiveBirthdayDay = Math.Min(birthday.Value.Day, DateTime.DaysInMonth(today.Year, birthday.Value.Month));
@@ -180,6 +270,26 @@ public sealed class BangResponseService
     public string GetBotInsultResponse()
     {
         return Pick(BotInsultResponses);
+    }
+
+    public bool LooksLikeTimeoutInsult(string content, ulong botUserId, string botUsername)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        var targetPattern = BuildBotTargetPattern(botUserId, botUsername);
+        // Match variations of fuck/fuk/fuc (with optional middle 'c') plus the bot name
+        var insultPattern =
+            $@"(?:\b[f]u[c]?k\b[\s\p{{P}}]*(?:{targetPattern})|(?:{targetPattern})[\s\p{{P}}]*\b[f]u[c]?k\b)";
+
+        return Regex.IsMatch(content, insultPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    public string GetTimeoutInsultResponse(string username)
+    {
+        return string.Format(Pick(TimeoutInsultResponses), username);
     }
 
     public string GetPurposeCrisisResponse()
@@ -259,4 +369,6 @@ public sealed class BangResponseService
 
         return topic;
     }
+
+    public sealed record BirthdayRollResult(int Roll, string? Response);
 }

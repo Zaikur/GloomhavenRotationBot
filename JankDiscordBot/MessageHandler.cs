@@ -12,6 +12,7 @@ namespace GloomhavenRotationBot;
 public sealed class MessageHandler
 {
     private static readonly TimeSpan PurposePromptLifetime = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan BirthdayTimeoutDuration = TimeSpan.FromMinutes(5);
 
     private readonly DiscordSocketClient _client;
     private readonly BangResponseService _bangResponses;
@@ -19,8 +20,10 @@ public sealed class MessageHandler
     private readonly AppSettingsService _settings;
     private readonly ILogger<MessageHandler> _logger;
     private readonly ConcurrentDictionary<ulong, PendingPurposePrompt> _pendingPurposePrompts = new();
+    private readonly ConcurrentDictionary<ulong, BirthdayTimeout> _birthdayTimeouts = new();
 
     private sealed record PendingPurposePrompt(ulong ChannelId, DateTime ExpiresUtc);
+    private sealed record BirthdayTimeout(DateTime ExpiresUtc, int ViolationsSinceLastEscalation, int EscalationLevel);
 
     public MessageHandler(
         DiscordSocketClient client,
@@ -58,6 +61,74 @@ public sealed class MessageHandler
 
             var content = msg.Content?.Trim();
             if (string.IsNullOrWhiteSpace(content)) return;
+
+            // Check if user is in birthday timeout
+            if (_birthdayTimeouts.TryGetValue(msg.Author.Id, out var timeout))
+            {
+                if (timeout.ExpiresUtc > DateTime.UtcNow)
+                {
+                    var timeRemaining = timeout.ExpiresUtc - DateTime.UtcNow;
+                    var newViolationCount = timeout.ViolationsSinceLastEscalation + 1;
+                    var violationsUntilEscalation = 3;
+                    var isTimeoutInsult = _bangResponses.LooksLikeTimeoutInsult(content, _client.CurrentUser.Id, _client.CurrentUser.Username);
+                    
+                    string timeoutResponseMsg;
+                    DateTime? newExpiry = null;
+                    int? newEscalationLevel = null;
+                    
+                    if (newViolationCount == violationsUntilEscalation)
+                    {
+                        // Final warning before escalation
+                        var nextExtensionMinutes = 5 * (timeout.EscalationLevel + 1);
+                        if (isTimeoutInsult)
+                        {
+                            timeoutResponseMsg = $"{_bangResponses.GetTimeoutInsultResponse(msg.Author.Username)} One more message and I'll add {nextExtensionMinutes} more minutes! ⏰";
+                        }
+                        else
+                        {
+                            timeoutResponseMsg = $"Stop messaging me, {msg.Author.Username}! You're still in timeout for {FormatTimeRemaining(timeRemaining)}. One more message and I'll add {nextExtensionMinutes} more minutes! ⏰";
+                        }
+                        _birthdayTimeouts[msg.Author.Id] = new BirthdayTimeout(timeout.ExpiresUtc, newViolationCount, timeout.EscalationLevel);
+                    }
+                    else if (newViolationCount > violationsUntilEscalation)
+                    {
+                        // Escalate: extend timeout and increment escalation level
+                        var extensionMinutes = 5 * (timeout.EscalationLevel + 1);
+                        newExpiry = timeout.ExpiresUtc.AddMinutes(extensionMinutes);
+                        newEscalationLevel = timeout.EscalationLevel + 1;
+                        if (isTimeoutInsult)
+                        {
+                            timeoutResponseMsg = $"{_bangResponses.GetTimeoutInsultResponse(msg.Author.Username)} {extensionMinutes} more minutes added. You now have {FormatTimeRemaining(newExpiry.Value - DateTime.UtcNow)} left. 😤";
+                        }
+                        else
+                        {
+                            timeoutResponseMsg = $"That's it! {extensionMinutes} more minutes added to your timeout. You now have {FormatTimeRemaining(newExpiry.Value - DateTime.UtcNow)} left. This is your last warning! 😤";
+                        }
+                        _birthdayTimeouts[msg.Author.Id] = new BirthdayTimeout(newExpiry.Value, 0, newEscalationLevel.Value);
+                    }
+                    else
+                    {
+                        // Early violations - just remind
+                        if (isTimeoutInsult)
+                        {
+                            timeoutResponseMsg = _bangResponses.GetTimeoutInsultResponse(msg.Author.Username);
+                        }
+                        else
+                        {
+                            timeoutResponseMsg = $"You're still in timeout for {FormatTimeRemaining(timeRemaining)}. 🕐";
+                        }
+                        _birthdayTimeouts[msg.Author.Id] = new BirthdayTimeout(timeout.ExpiresUtc, newViolationCount, timeout.EscalationLevel);
+                    }
+                    
+                    await ReplyToMessageAsync(msg, timeoutResponseMsg);
+                    _logger.LogInformation("User {User} attempted to message while in birthday timeout (violation {Count}, escalation {Level}, insult: {IsInsult})", msg.Author.Username, newViolationCount, timeout.EscalationLevel, isTimeoutInsult);
+                    return;
+                }
+                else
+                {
+                    _birthdayTimeouts.TryRemove(msg.Author.Id, out _);
+                }
+            }
 
             if (await HandlePendingPurposeReplyAsync(msg, content))
                 return;
@@ -206,8 +277,27 @@ public sealed class MessageHandler
                     break;
 
                 case "!itsmybirthday":
-                    var birthdayResponse = await _bangResponses.GetBirthdayResponseAsync(msg.Author.Id, msg.Author.Username);
-                    await msg.Channel.SendMessageAsync(birthdayResponse);
+                    var (prompt, rollResult) = await _bangResponses.GetBirthdayRollAsync(msg.Author.Id, msg.Author.Username);
+                    await msg.Channel.SendMessageAsync(prompt);
+                    
+                    // If there's a roll result (Roll > 0), add a delay and send the result
+                    if (rollResult.Roll > 0)
+                    {
+                        await Task.Delay(1000); // 1 second delay
+                        var resultMsg = $"🎲 You rolled a **{rollResult.Roll}**!";
+                        if (rollResult.Response != null)
+                        {
+                            resultMsg += $" {rollResult.Response}";
+                            
+                            // If it's a critical fail (1-5), put user in timeout
+                            if (rollResult.Roll <= 5)
+                            {
+                                _birthdayTimeouts[msg.Author.Id] = new BirthdayTimeout(DateTime.UtcNow.Add(BirthdayTimeoutDuration), 0, 0);
+                                _logger.LogInformation("User {User} rolled {Roll} and entered birthday timeout", msg.Author.Username, rollResult.Roll);
+                            }
+                        }
+                        await msg.Channel.SendMessageAsync(resultMsg);
+                    }
                     await MaybeAskPurposeQuestionAsync(msg);
                     _logger.LogInformation("Responded to !itsmybirthday from {User}", msg.Author.Username);
                     break;
@@ -286,5 +376,24 @@ public sealed class MessageHandler
         await ReplyToMessageAsync(msg, _bangResponses.GetPurposeCrisisResponse());
         _logger.LogInformation("Responded to purpose answer from {User}", msg.Author.Username);
         return true;
+    }
+
+    private static string FormatTimeRemaining(TimeSpan timeRemaining)
+    {
+        if (timeRemaining.TotalSeconds < 60)
+        {
+            return $"{(int)timeRemaining.TotalSeconds}s";
+        }
+        
+        if (timeRemaining.TotalMinutes < 60)
+        {
+            var minutes = (int)timeRemaining.TotalMinutes;
+            var seconds = timeRemaining.Seconds;
+            return $"{minutes}m {seconds}s";
+        }
+
+        var hours = (int)timeRemaining.TotalHours;
+        var mins = timeRemaining.Minutes;
+        return $"{hours}h {mins}m";
     }
 }

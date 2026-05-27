@@ -12,12 +12,6 @@ public sealed class AppSettingsService
     private const string KeyAnnounceMinute = "Announcements.Minute";
     private const string KeyAutoAdvanceMinutesAfterStart = "Scheduling.AutoAdvanceMinutesAfterStart";
     private const string KeyPurposePromptSeenUsers = "Bang.PurposePromptSeenUsers";
-    private const string KeyTranscriptCommandTemplate = "Transcription.CommandTemplate";
-    private const string KeyTranscriptRootPath = "Transcription.RootPath";
-    private const string KeyHuggingFaceToken = "Transcription.HuggingFaceToken";
-    private const string DiscordTokenKey = "discord.token";
-    private const string DiscordGuildKey = "discord.guildId";
-    private const string DiscordRegKey = "discord.registerToGuild";
 
 
     public AppSettingsService(BotRepository repo, ILogger<AppSettingsService> log)
@@ -180,40 +174,6 @@ public sealed class AppSettingsService
     {
         var (token, guildId, _) = await GetDiscordConfigAsync();
         return !string.IsNullOrWhiteSpace(token) && guildId > 0;
-    }
-
-    public async Task<(string CommandTemplate, string RootPath)> GetTranscriptionConfigAsync()
-    {
-        var commandTemplate = (await _repo.GetSettingAsync(KeyTranscriptCommandTemplate))?.Trim();
-        if (string.IsNullOrWhiteSpace(commandTemplate))
-            commandTemplate = GameplayTranscriptionService.DefaultCommandTemplate;
-
-        var rootPath = (await _repo.GetSettingAsync(KeyTranscriptRootPath))?.Trim() ?? "data/transcripts";
-        return (commandTemplate, rootPath);
-    }
-
-    public async Task SaveTranscriptionConfigAsync(string commandTemplate, string rootPath)
-    {
-        var normalizedRoot = string.IsNullOrWhiteSpace(rootPath) ? "data/transcripts" : rootPath.Trim();
-        await _repo.UpsertSettingAsync(KeyTranscriptCommandTemplate, commandTemplate?.Trim() ?? string.Empty);
-        await _repo.UpsertSettingAsync(KeyTranscriptRootPath, normalizedRoot);
-    }
-
-    public async Task<string> GetHuggingFaceTokenAsync()
-    {
-        return (await _repo.GetSettingAsync(KeyHuggingFaceToken))?.Trim() ?? "";
-    }
-
-    public async Task<bool> HasHuggingFaceTokenAsync()
-    {
-        var val = await GetHuggingFaceTokenAsync();
-        return !string.IsNullOrWhiteSpace(val);
-    }
-
-    public async Task SaveHuggingFaceTokenAsync(string? tokenPlain)
-    {
-        if (!string.IsNullOrWhiteSpace(tokenPlain))
-            await _repo.UpsertSettingAsync(KeyHuggingFaceToken, tokenPlain.Trim());
     }
 
     private async Task<HashSet<ulong>> GetPurposePromptSeenUsersAsync()

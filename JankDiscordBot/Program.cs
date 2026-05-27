@@ -43,13 +43,23 @@ builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<AnnouncementSender>();
 builder.Services.AddSingleton<BangResponseService>();
 builder.Services.AddSingleton<ChatbotService>();
-builder.Services.AddSingleton<GameplayTranscriptionService>();
 builder.Services.AddHostedService<MorningAnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();
 builder.Services.AddHostedService<BirthdayService>();
 
 var app = builder.Build();
+
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var repo = scope.ServiceProvider.GetRequiredService<BotRepository>();
+    await repo.DeleteSettingsAsync(new[]
+    {
+        "Transcription.CommandTemplate",
+        "Transcription.RootPath",
+        "Transcription.HuggingFaceToken"
+    });
+}
 
 app.Use(async (ctx, next) =>
 {

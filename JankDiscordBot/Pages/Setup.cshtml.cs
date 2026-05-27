@@ -4,8 +4,6 @@ using Discord.Rest;
 using GloomhavenRotationBot.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using System.Net;
-using System.Net.Http.Headers;
 
 public class SetupModel : PageModel
 {
@@ -25,10 +23,8 @@ public class SetupModel : PageModel
     [BindProperty] public string AnnounceTime { get; set; } = "09:00"; // "HH:mm"
     [BindProperty] public int AutoAdvanceMinutesAfterStart { get; set; } = 60;
     [BindProperty] public bool ResetPurposePromptHistory { get; set; }
-    [BindProperty] public string? HuggingFaceToken { get; set; }
 
     public bool HasToken { get; private set; }
-    public bool HasHuggingFaceToken { get; private set; }
     public string? Message { get; set; }
     public string MessageKind { get; set; } = "info"; // "info" | "success" | "warning" | "danger"
 
@@ -44,7 +40,6 @@ public class SetupModel : PageModel
         AnnounceTime = $"{h:D2}:{m:D2}";
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
-        HasHuggingFaceToken = await _settings.HasHuggingFaceTokenAsync();
     }
 
     public async Task<IActionResult> OnPostSaveDiscordAsync()
@@ -172,84 +167,6 @@ public class SetupModel : PageModel
         return Page();
     }
 
-    public async Task<IActionResult> OnPostSaveHuggingFaceAsync()
-    {
-        if (string.IsNullOrWhiteSpace(HuggingFaceToken))
-        {
-            Message = "No Hugging Face token entered. Existing token unchanged.";
-            MessageKind = "warning";
-            await ReloadTokenFlagsAsync();
-            await OnGetAsync();
-            return Page();
-        }
-
-        await _settings.SaveHuggingFaceTokenAsync(HuggingFaceToken);
-        HuggingFaceToken = null;
-        Message = "Hugging Face token saved.";
-        MessageKind = "success";
-        await ReloadTokenFlagsAsync();
-        await OnGetAsync();
-        return Page();
-    }
-
-    public async Task<IActionResult> OnPostTestHuggingFaceAsync()
-    {
-        var storedToken = await _settings.GetHuggingFaceTokenAsync();
-        var tokenToTest = !string.IsNullOrWhiteSpace(HuggingFaceToken) ? HuggingFaceToken!.Trim() : storedToken;
-
-        if (string.IsNullOrWhiteSpace(tokenToTest))
-        {
-            Message = "No Hugging Face token to test. Paste one or save one first.";
-            MessageKind = "warning";
-            await ReloadTokenFlagsAsync();
-            return Page();
-        }
-
-        try
-        {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokenToTest);
-
-            var whoami = await http.GetAsync("https://huggingface.co/api/whoami-v2");
-            if (!whoami.IsSuccessStatusCode)
-            {
-                Message = "Token was rejected by Hugging Face. Confirm token type/scope and try again.";
-                MessageKind = "danger";
-                await ReloadTokenFlagsAsync();
-                return Page();
-            }
-
-            var modelAccess = await http.GetAsync("https://huggingface.co/pyannote/speaker-diarization-3.1/resolve/main/README.md");
-            if (modelAccess.IsSuccessStatusCode)
-            {
-                Message = "Hugging Face token test succeeded, including pyannote model access.";
-                MessageKind = "success";
-            }
-            else if (modelAccess.StatusCode == HttpStatusCode.Unauthorized || modelAccess.StatusCode == HttpStatusCode.Forbidden)
-            {
-                Message = "Token is valid, but pyannote model access was denied. Accept the model terms on Hugging Face first.";
-                MessageKind = "warning";
-            }
-            else
-            {
-                Message = $"Token is valid, but pyannote model access check returned {(int)modelAccess.StatusCode}.";
-                MessageKind = "warning";
-            }
-        }
-        catch (Exception ex)
-        {
-            Message = $"Hugging Face test failed: {ex.Message}";
-            MessageKind = "danger";
-        }
-        finally
-        {
-            HuggingFaceToken = null;
-            await ReloadTokenFlagsAsync();
-        }
-
-        return Page();
-    }
-
     public async Task<IActionResult> OnPostAutosaveAsync(string scope)
     {
         try
@@ -303,6 +220,5 @@ public class SetupModel : PageModel
     {
         var (token, _, _) = await _settings.GetDiscordConfigAsync();
         HasToken = !string.IsNullOrWhiteSpace(token);
-        HasHuggingFaceToken = await _settings.HasHuggingFaceTokenAsync();
     }
 }

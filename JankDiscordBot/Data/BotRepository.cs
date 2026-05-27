@@ -214,6 +214,35 @@ public sealed class BotRepository
         await cmd.ExecuteNonQueryAsync();
     }
 
+    public async Task<int> DeleteSettingsAsync(IEnumerable<string> keys)
+    {
+        var keyList = keys
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (keyList.Count == 0)
+            return 0;
+
+        await using var con = Open();
+        await con.OpenAsync();
+
+        await using var tx = con.BeginTransaction();
+        var deleted = 0;
+
+        foreach (var key in keyList)
+        {
+            await using var cmd = con.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM AppSettings WHERE Key = @k";
+            cmd.Parameters.AddWithValue("@k", key);
+            deleted += await cmd.ExecuteNonQueryAsync();
+        }
+
+        await tx.CommitAsync();
+        return deleted;
+    }
+
     public async Task<List<SessionOverrideRow>> GetOverridesInRangeAsync(DateOnly startInclusive, DateOnly endInclusive)
     {
         await using var con = Open();

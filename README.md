@@ -17,7 +17,6 @@ A self-hosted Discord bot + local Web UI for managing a Gloomhaven group:
 - Sends a **morning announcement** to a configured channel
 - Can **auto-advance** rotations after a session time passes if the session wasn't cancelled.
 - Includes a **Broadcast** UI page to send custom Discord-formatted messages as the bot
-- Includes **local gameplay transcription** with diarized speaker labels and player mapping
 - **Chatbot** responds to questions like "are we doing this tonight?" with next session details
 - Designed to run as a container on **TrueNAS SCALE** (or any Docker host)
 
@@ -93,15 +92,10 @@ Generic bang behavior:
 - Birthday announcements go to the same announcement channel used for morning session posts
 - Automated birthday posts are deduplicated with a per-user last-sent-year value
 
-### Broadcast and local transcripts
+### Broadcast
 
 - Broadcast page sends a one-off message to the configured announcement channel exactly as entered
 - Supports Discord markdown, emoji syntax, mentions, and line breaks
-- Live gameplay transcription captures audio from the browser (for example, a laptop in the room) and uploads background chunks to the server
-- Chunk output is processed with your configured local command template (for example WhisperX)
-- Speaker labels are normalized as `Speaker 1`, `Speaker 2`, etc. and can be mapped to roster members at any time
-- Transcript page shows live chat-style output in its own scrollable window
-- Transcript History groups saved sessions by date and shows scheduled sessions on the same day for quick lookup
 
 ### Web UI
 
@@ -113,8 +107,6 @@ The LAN-only admin UI includes:
 - Schedule: timezone-aware weekly/monthly recurrence configuration
 - Calendar: month view with cancel, move, and note overrides for individual occurrences
 - Broadcast: send a manual Discord message as the bot
-- Transcript: start/stop recording, configure command template/storage path, watch live transcript, and map speakers to players
-- Transcript History: browse previous transcript sessions by date and jump to any session
 
 ## Tech Stack
 
@@ -163,12 +155,6 @@ dotnet run --project JankDiscordBot
 4. Go to Setup and save your Guild ID and bot token.
 5. Configure Schedule, Rosters, and optional announcements.
 
-Optional transcript setup:
-
-6. Open Transcript and set a local transcription command template (for example the bundled `whisperx` CLI).
-7. Start a transcript session, then click **Start Laptop Mic** in that page from the device whose microphone you want to use.
-8. Use Transcript History to review past sessions and map speakers to players.
-
 The bot monitors the saved SQLite settings and reconnects automatically after you save changes.
 
 ## Docker / TrueNAS SCALE
@@ -176,13 +162,6 @@ The bot monitors the saved SQLite settings and reconnects automatically after yo
 ### Container Image
 
 - `ghcr.io/zaikur/gloomhavenrotationbot:latest`
-
-The container now includes transcript runtime dependencies:
-
-- `python3`
-- `pip`
-- `ffmpeg`
-- `whisperx` (CLI installed in the container virtual environment)
 
 ### Example compose / TrueNAS Custom App YAML
 
@@ -195,8 +174,6 @@ services:
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:5055
       DOTNET_ENVIRONMENT: Production
-      # Optional: required by WhisperX diarization models
-      # HUGGINGFACE_TOKEN: your_token_here
     ports:
       - "5055:5055"
     restart: unless-stopped
@@ -225,7 +202,7 @@ With `pull_policy: always`, the image will be pulled during redeploy.
 
 ## Data and Persistence
 
-The bot stores its core app state in SQLite and transcript sessions as files.
+The bot stores its core app state in SQLite.
 
 ### Things stored
 
@@ -239,20 +216,6 @@ The bot stores its core app state in SQLite and transcript sessions as files.
 - Birthdays: month, day, and the last year an automated birthday message was sent
 - Bang-command state: the list of users who have already seen the one-off purpose prompt
 
-### Transcript storage
-
-Transcript sessions are file-backed under the configured transcript root path (default `data/transcripts`).
-
-Each session folder contains:
-
-- `session.json`: session metadata and status
-- `segments.json`: diarized transcript segments
-- `speaker-map.json`: optional speaker-to-player assignments
-- `speaker-aliases.json`: internal chunk speaker normalization state
-- `chunks/`: recorded WAV chunk files
-- `output/`: transcription command outputs per chunk
-- `run.log`: command execution log
-
 ### To migrate or reset
 
 - Stop the app or container
@@ -260,7 +223,6 @@ Each session folder contains:
 - Start the app or container again
 
 In the default container layout, the database lives under `/app/data/app.db`.
-In the default transcript configuration, transcript session folders live under `/app/data/transcripts`.
 
 ## Common Troubleshooting
 
@@ -295,12 +257,3 @@ In the default transcript configuration, transcript session folders live under `
 - Confirm you are connecting from localhost or a private LAN IP
 - Confirm host firewall rules
 
-### Transcript is recording but no text appears
-
-- Make sure a valid transcription command template is saved on Transcript.
-- If you are using Docker image builds from this repo, WhisperX/ffmpeg are already bundled and the default template uses the `whisperx` CLI from the container virtual environment.
-- For non-Docker runs, confirm required local dependencies for your command are installed.
-- Check transcript session `run.log` in the session folder for command errors.
-- Verify the expected speaker count is reasonable for the number of people present.
-- WhisperX diarization may require a Hugging Face token depending on the selected model/pipeline.
-- If recording from another device, keep that Transcript page open and confirm browser microphone permission is allowed.

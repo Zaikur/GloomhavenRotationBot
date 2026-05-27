@@ -103,24 +103,21 @@ public class CalendarModel : PageModel
         if (s == null) return ("_(not set)_", "_(not set)_");
 
         var sessionIsPast = DateOnly.FromDateTime(s.EffectiveStartLocal) < TodayLocal;
+        var offset = sessionIsPast ? -1 : 0;
 
         string dmText = "_(not set)_";
         string foodText = "_(not set)_";
 
         if (DmRotation.Members.Count > 0)
         {
-            var dmCount = DmRotation.Members.Count;
-            var dmIndex = (DmRotation.Index + (sessionIsPast ? -1 : 0)) % dmCount;
-            if (dmIndex < 0) dmIndex += dmCount;
-            dmText = GetMemberName(DmRotation.Members[dmIndex]);
+            var dmIndex = DmRotation.GetOffsetAvailableIndex(offset);
+            dmText = dmIndex is null ? "_(all absent)_" : GetMemberName(DmRotation.Members[dmIndex.Value]);
         }
 
         if (FoodRotation.Members.Count > 0)
         {
-            var fCount = FoodRotation.Members.Count;
-            var fIndex = (FoodRotation.Index + (sessionIsPast ? -1 : 0)) % fCount;
-            if (fIndex < 0) fIndex += fCount;
-            foodText = GetMemberName(FoodRotation.Members[fIndex]);
+            var fIndex = FoodRotation.GetOffsetAvailableIndex(offset);
+            foodText = fIndex is null ? "_(all absent)_" : GetMemberName(FoodRotation.Members[fIndex.Value]);
         }
 
         return (dmText, foodText);

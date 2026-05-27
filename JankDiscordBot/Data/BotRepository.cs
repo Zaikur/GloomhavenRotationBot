@@ -122,6 +122,8 @@ public sealed class BotRepository
     public async Task SaveRotationAsync(RotationRole role, RotationState state)
     {
         state.Index = NormalizeIndex(state.Index, state.Members.Count);
+        state.AbsentMembers ??= new HashSet<ulong>();
+        state.AbsentMembers.RemoveWhere(id => !state.Members.Contains(id));
 
         var json = JsonSerializer.Serialize(state, JsonOpts);
 

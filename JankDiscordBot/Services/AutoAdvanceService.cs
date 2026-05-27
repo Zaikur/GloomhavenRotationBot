@@ -79,7 +79,7 @@ public sealed class AutoAdvanceService : BackgroundService
         var state = await _repo.GetRotationAsync(role);
         if (state.Members.Count == 0) return;
 
-        state.Index = (state.Index + 1) % state.Members.Count;
+        state.TryAdvanceToNextAvailable();
         await _repo.SaveRotationAsync(role, state);
     }
 }

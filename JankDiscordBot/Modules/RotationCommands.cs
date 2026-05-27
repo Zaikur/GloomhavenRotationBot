@@ -31,7 +31,13 @@ public sealed class RotationCommands : InteractionModuleBase<SocketInteractionCo
             return;
         }
 
-        var id = state.Members[state.Index % state.Members.Count];
+        var id = state.GetCurrentAvailableMember();
+        if (id is null)
+        {
+            await FollowupAsync($"Everyone in **{Pretty(rr.Value)}** is marked absent right now.", ephemeral: true);
+            return;
+        }
+
         await FollowupAsync($"**{Pretty(rr.Value)}:** <@{id}>", ephemeral: true);
     }
 
@@ -64,7 +70,7 @@ public sealed class RotationCommands : InteractionModuleBase<SocketInteractionCo
         var state = await _repo.GetRotationAsync(role);
         if (state.Members.Count == 0) return;
 
-        state.Index = (state.Index + 1) % state.Members.Count;
+        state.TryAdvanceToNextAvailable();
         await _repo.SaveRotationAsync(role, state);
     }
 

@@ -23,15 +23,22 @@
             <div class="card-body">
                 <h5 class="card-title">DM Roster</h5>
 
+                @{ var dmCurrentIndex = Model.Dm.GetCurrentAvailableIndex(); }
+
                 <ul class="list-group mb-3">
                     @for (int i = 0; i < Model.Dm.Members.Count; i++)
                     {
                         var id = Model.Dm.Members[i];
                         var name = Model.NameFor(id);
+                        var isAbsent = Model.Dm.IsAbsent(id);
                         <li class="list-group-item d-flex align-items-center">
                             <div class="roster-name">
-                                <span class="me-2">@((i == Model.Dm.Index) ? "➡️" : "")</span>
+                                <span class="me-2">@((dmCurrentIndex == i) ? "➡️" : "")</span>
                                 <strong>@(i + 1).</strong> @name <span class="text-muted small">(<code>@id</code>)</span>
+                                @if (isAbsent)
+                                {
+                                    <span class="badge text-bg-warning ms-2">Absent</span>
+                                }
                             </div>
                             <div class="flex-grow-1"></div>
                             <div class="btn-group">
@@ -49,6 +56,13 @@
                                     <input type="hidden" name="Role" value="dm" />
                                     <input type="hidden" name="Index" value="@i" />
                                     <button class="btn btn-sm btn-outline-primary" type="submit">Set Current</button>
+                                </form>
+                                <form method="post" asp-page-handler="ToggleAbsent">
+                                    <input type="hidden" name="Role" value="dm" />
+                                    <input type="hidden" name="Index" value="@i" />
+                                    <button class="btn btn-sm @(isAbsent ? "btn-outline-success" : "btn-outline-warning")" type="submit">
+                                        @(isAbsent ? "Mark Present" : "Mark Absent")
+                                    </button>
                                 </form>
                                 <form method="post" asp-page-handler="Remove">
                                     <input type="hidden" name="Role" value="dm" />
@@ -85,15 +99,22 @@
             <div class="card-body">
                 <h5 class="card-title">Food Roster</h5>
 
+                @{ var foodCurrentIndex = Model.Food.GetCurrentAvailableIndex(); }
+
                 <ul class="list-group mb-3">
                     @for (int i = 0; i < Model.Food.Members.Count; i++)
                     {
                         var id = Model.Food.Members[i];
                         var name = Model.NameFor(id);
+                        var isAbsent = Model.Food.IsAbsent(id);
                         <li class="list-group-item d-flex align-items-center">
                             <div class="roster-name">
-                                <span class="me-2">@((i == Model.Food.Index) ? "➡️" : "")</span>
+                                <span class="me-2">@((foodCurrentIndex == i) ? "➡️" : "")</span>
                                 <strong>@(i + 1).</strong> @name <span class="text-muted small">(<code>@id</code>)</span>
+                                @if (isAbsent)
+                                {
+                                    <span class="badge text-bg-warning ms-2">Absent</span>
+                                }
                             </div>
                             <div class="flex-grow-1"></div>
                             <div class="btn-group ms-auto">
@@ -113,6 +134,14 @@
                                     <input type="hidden" name="Role" value="food" />
                                     <input type="hidden" name="Index" value="@i" />
                                     <button class="btn btn-sm btn-outline-primary" type="submit">Set Current</button>
+                                </form>
+
+                                <form method="post" asp-page-handler="ToggleAbsent">
+                                    <input type="hidden" name="Role" value="food" />
+                                    <input type="hidden" name="Index" value="@i" />
+                                    <button class="btn btn-sm @(isAbsent ? "btn-outline-success" : "btn-outline-warning")" type="submit">
+                                        @(isAbsent ? "Mark Present" : "Mark Absent")
+                                    </button>
                                 </form>
 
                                 <form method="post" asp-page-handler="Remove">

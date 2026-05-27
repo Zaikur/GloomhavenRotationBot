@@ -172,13 +172,16 @@ public sealed class AnnouncementSender
         var dm = await _repo.GetRotationAsync(RotationRole.DM);
         var cook = await _repo.GetRotationAsync(RotationRole.Food);
 
-        string dmText = dm.Members.Count > 0
-            ? $"<@{dm.Members[dm.Index % dm.Members.Count]}>"
-            : "_(not set)_";
+        var dmId = dm.GetCurrentAvailableMember();
+        var cookId = cook.GetCurrentAvailableMember();
 
-        string cookText = cook.Members.Count > 0
-            ? $"<@{cook.Members[cook.Index % cook.Members.Count]}>"
-            : "_(not set)_";
+        string dmText = dm.Members.Count == 0
+            ? "_(not set)_"
+            : dmId is null ? "_(all absent)_" : $"<@{dmId.Value}>";
+
+        string cookText = cook.Members.Count == 0
+            ? "_(not set)_"
+            : cookId is null ? "_(all absent)_" : $"<@{cookId.Value}>";
 
         var noteBlock = string.IsNullOrWhiteSpace(s.Note)
             ? ""

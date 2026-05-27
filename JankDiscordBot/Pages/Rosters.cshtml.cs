@@ -80,9 +80,31 @@ public class RostersModel : PageModel
         var state = await _repo.GetRotationAsync(r);
 
         if (index >= 0 && index < state.Members.Count)
+        {
+            var removedId = state.Members[index];
             state.Members.RemoveAt(index);
+            state.AbsentMembers.Remove(removedId);
+        }
 
         if (state.Index >= state.Members.Count) state.Index = 0;
+
+        await _repo.SaveRotationAsync(r, state);
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostToggleAbsentAsync(string role, int index)
+    {
+        var r = ParseRole(role);
+        var state = await _repo.GetRotationAsync(r);
+
+        if (index >= 0 && index < state.Members.Count)
+        {
+            var memberId = state.Members[index];
+            if (state.AbsentMembers.Contains(memberId))
+                state.AbsentMembers.Remove(memberId);
+            else
+                state.AbsentMembers.Add(memberId);
+        }
 
         await _repo.SaveRotationAsync(r, state);
         return RedirectToPage();

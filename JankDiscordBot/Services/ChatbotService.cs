@@ -124,13 +124,16 @@ public sealed class ChatbotService
         var dm = await _repo.GetRotationAsync(RotationRole.DM);
         var cook = await _repo.GetRotationAsync(RotationRole.Food);
 
-        var dmText = dm.Members.Count > 0
-            ? $"<@{dm.Members[dm.Index % dm.Members.Count]}>"
-            : "_(not set)_";
+        var dmId = dm.GetCurrentAvailableMember();
+        var cookId = cook.GetCurrentAvailableMember();
 
-        var cookText = cook.Members.Count > 0
-            ? $"<@{cook.Members[cook.Index % cook.Members.Count]}>"
-            : "_(not set)_";
+        var dmText = dm.Members.Count == 0
+            ? "_(not set)_"
+            : dmId is null ? "_(all absent)_" : $"<@{dmId.Value}>";
+
+        var cookText = cook.Members.Count == 0
+            ? "_(not set)_"
+            : cookId is null ? "_(all absent)_" : $"<@{cookId.Value}>";
 
         var moved = upcoming.OriginalDateLocal != DateOnly.FromDateTime(upcoming.EffectiveStartLocal)
             ? " _(moved)_"
@@ -391,7 +394,11 @@ public sealed class ChatbotService
         if (dm.Members.Count == 0)
             return "No DM is currently assigned for the next session.";
 
-        var dmName = $"<@{dm.Members[dm.Index % dm.Members.Count]}>";
+        var dmId = dm.GetCurrentAvailableMember();
+        if (dmId is null)
+            return "Everyone in the DM roster is marked absent for the next session.";
+
+        var dmName = $"<@{dmId.Value}>";
         var timePhrase = FormatSessionTime(upcoming, nowLocal);
 
         return $"🧙 **{dmName}** will be running the session {timePhrase}.";
@@ -413,13 +420,16 @@ public sealed class ChatbotService
         if (dm.Members.Count == 0)
             return "No DM is currently assigned for the next session.";
 
-        var currentDmId = dm.Members[dm.Index % dm.Members.Count];
+        var currentDmId = dm.GetCurrentAvailableMember();
+        if (currentDmId is null)
+            return "Everyone in the DM roster is marked absent for the next session.";
+
         var timePhrase = FormatSessionTime(upcoming, nowLocal);
 
-        if (currentDmId == userId)
+        if (currentDmId.Value == userId)
             return $"✅ Yes! You're running the session {timePhrase}. 🧙";
 
-        return $"❌ Nope! <@{currentDmId}> is running the session {timePhrase}.";
+        return $"❌ Nope! <@{currentDmId.Value}> is running the session {timePhrase}.";
     }
 
     /// <summary>
@@ -438,7 +448,11 @@ public sealed class ChatbotService
         if (cook.Members.Count == 0)
             return "No one is currently assigned to bring food for the next session.";
 
-        var cookName = $"<@{cook.Members[cook.Index % cook.Members.Count]}>";
+        var cookId = cook.GetCurrentAvailableMember();
+        if (cookId is null)
+            return "Everyone in the food roster is marked absent for the next session.";
+
+        var cookName = $"<@{cookId.Value}>";
         var timePhrase = FormatSessionTime(upcoming, nowLocal);
 
         return $"🍕 **{cookName}** will bring food for the session {timePhrase}.";
@@ -460,13 +474,16 @@ public sealed class ChatbotService
         if (cook.Members.Count == 0)
             return "No one is currently assigned to bring food for the next session.";
 
-        var currentCookId = cook.Members[cook.Index % cook.Members.Count];
+        var currentCookId = cook.GetCurrentAvailableMember();
+        if (currentCookId is null)
+            return "Everyone in the food roster is marked absent for the next session.";
+
         var timePhrase = FormatSessionTime(upcoming, nowLocal);
 
-        if (currentCookId == userId)
+        if (currentCookId.Value == userId)
             return $"✅ Yes! You're bringing food for the session {timePhrase}. 🍕";
 
-        return $"❌ Nope! <@{currentCookId}> is bringing food for the session {timePhrase}.";
+        return $"❌ Nope! <@{currentCookId.Value}> is bringing food for the session {timePhrase}.";
     }
 
     /// <summary>

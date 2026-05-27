@@ -188,27 +188,6 @@
                                                 var time = s.EffectiveStartLocal.ToString("h:mm tt");
                                                 var moved = s.OriginalDateLocal != DateOnly.FromDateTime(s.EffectiveStartLocal);
 
-                                                var sessionIsPast = DateOnly.FromDateTime(s.EffectiveStartLocal) < Model.TodayLocal;
-
-                                                // DM/Food assignment: future = current index, past = previous index (heuristic)
-                                                string dmText = "_(not set)_";
-                                                string foodText = "_(not set)_";
-
-                                                if (Model.DmRotation.Members.Count > 0)
-                                                {
-                                                    var dmCount = Model.DmRotation.Members.Count;
-                                                    var dmIndex = (Model.DmRotation.Index + (sessionIsPast ? -1 : 0)) % dmCount;
-                                                    if (dmIndex < 0) dmIndex += dmCount;
-                                                    dmText = Model.GetMemberName(Model.DmRotation.Members[dmIndex]);
-                                                }
-
-                                                if (Model.FoodRotation.Members.Count > 0)
-                                                {
-                                                    var fCount = Model.FoodRotation.Members.Count;
-                                                    var fIndex = (Model.FoodRotation.Index + (sessionIsPast ? -1 : 0)) % fCount;
-                                                    if (fIndex < 0) fIndex += fCount;
-                                                    foodText = Model.GetMemberName(Model.FoodRotation.Members[fIndex]);
-                                                }
 
                                                 <a class="btn btn-sm btn-outline-light text-start @(cancelled ? "text-danger" : "")"
                                                    href="/Calendar?year=@Model.MonthFirst.Year&month=@Model.MonthFirst.Month&edit=@s.OriginalDateLocal.ToString("yyyy-MM-dd")">

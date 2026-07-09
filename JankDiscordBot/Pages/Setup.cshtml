@@ -66,65 +66,6 @@
 
 <div class="card shadow-sm mt-3">
     <div class="card-body">
-        <h5 class="mb-1">Session schedule</h5>
-        <div class="text-white-50 small mb-3">Autosaves when you leave a field.</div>
-
-        <form method="post" asp-antiforgery="false" class="row g-3" data-autosave-form="true" id="setupScheduleForm">
-            <input type="hidden" name="scope" value="schedule" />
-
-            <div class="col-12 col-lg-6">
-                <label class="form-label">Time zone</label>
-                <input class="form-control" name="TimeZoneId" value="@Model.TimeZoneId" data-autosave="true" />
-            </div>
-
-            <div class="col-12 col-md-6 col-lg-3">
-                <label class="form-label">Frequency</label>
-                <select class="form-select" name="Frequency" id="setupScheduleFrequency" data-autosave="true">
-                    <option value="Weekly" selected="@(Model.Frequency=="Weekly")">Weekly</option>
-                    <option value="Monthly" selected="@(Model.Frequency=="Monthly")">Monthly</option>
-                </select>
-            </div>
-
-            <div class="col-12 col-md-6 col-lg-3">
-                <label class="form-label">Interval</label>
-                <input class="form-control" type="number" min="1" max="52" name="Interval" value="@Model.Interval" data-autosave="true" />
-                <div class="form-text text-white-50">Every N weeks or N months</div>
-            </div>
-
-            <div class="col-12 col-md-6">
-                <label class="form-label">Day of week</label>
-                <select class="form-select" name="DayOfWeekValue" data-autosave="true">
-                    @for (int i = 0; i <= 6; i++)
-                    {
-                        var name = ((DayOfWeek)i).ToString();
-                        <option value="@i" selected="@(Model.DayOfWeekValue==i)">@name</option>
-                    }
-                </select>
-            </div>
-
-            <div class="col-12 col-md-6">
-                <label class="form-label">Time</label>
-                <input class="form-control" type="time" name="ScheduleTime" value="@Model.ScheduleTime" data-autosave="true" />
-            </div>
-
-            <div class="col-12" id="setupMonthlyWeekRow">
-                <label class="form-label">Monthly rule</label>
-                <select class="form-select" name="MonthlyWeek" data-autosave="true">
-                    <option value="1" selected="@(Model.MonthlyWeek==1)">1st</option>
-                    <option value="2" selected="@(Model.MonthlyWeek==2)">2nd</option>
-                    <option value="3" selected="@(Model.MonthlyWeek==3)">3rd</option>
-                    <option value="4" selected="@(Model.MonthlyWeek==4)">4th</option>
-                    <option value="5" selected="@(Model.MonthlyWeek==5)">5th (or last)</option>
-                    <option value="-1" selected="@(Model.MonthlyWeek==-1)">Last</option>
-                </select>
-                <div class="form-text text-white-50">Example: 2nd Monday of the month.</div>
-            </div>
-        </form>
-    </div>
-</div>
-
-<div class="card shadow-sm mt-3">
-    <div class="card-body">
         <h5 class="mb-1">Announcements</h5>
         <div class="text-white-50 small mb-3">Autosaves when you leave a field.</div>
 
@@ -237,21 +178,5 @@
             field.addEventListener("change", () => scheduleAutosave(form));
         });
     });
-
-    const scheduleFrequency = document.getElementById("setupScheduleFrequency");
-    const monthlyWeekRow = document.getElementById("setupMonthlyWeekRow");
-
-    function applyScheduleFrequency() {
-        if (!scheduleFrequency || !monthlyWeekRow) {
-            return;
-        }
-
-        monthlyWeekRow.style.display = scheduleFrequency.value === "Monthly" ? "" : "none";
-    }
-
-    if (scheduleFrequency) {
-        scheduleFrequency.addEventListener("change", applyScheduleFrequency);
-        applyScheduleFrequency();
-    }
 })();
 </script>

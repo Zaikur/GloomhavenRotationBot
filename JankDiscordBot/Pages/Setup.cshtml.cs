@@ -23,6 +23,12 @@ public class SetupModel : PageModel
     [BindProperty] public string AnnounceTime { get; set; } = "09:00"; // "HH:mm"
     [BindProperty] public int AutoAdvanceMinutesAfterStart { get; set; } = 60;
     [BindProperty] public bool ResetPurposePromptHistory { get; set; }
+    [BindProperty] public string TimeZoneId { get; set; } = "America/Chicago";
+    [BindProperty] public string Frequency { get; set; } = "Weekly";
+    [BindProperty] public int Interval { get; set; } = 1;
+    [BindProperty] public int DayOfWeekValue { get; set; } = (int)DayOfWeek.Monday;
+    [BindProperty] public string ScheduleTime { get; set; } = "18:30";
+    [BindProperty] public int MonthlyWeek { get; set; } = 1;
 
     public bool HasToken { get; private set; }
     public string? Message { get; set; }
@@ -40,6 +46,14 @@ public class SetupModel : PageModel
         AnnounceTime = $"{h:D2}:{m:D2}";
 
         AutoAdvanceMinutesAfterStart = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
+
+        var rule = await _settings.GetScheduleRuleAsync();
+        TimeZoneId = rule.TimeZoneId;
+        Frequency = rule.Frequency;
+        Interval = rule.Interval;
+        DayOfWeekValue = (int)rule.DayOfWeek;
+        ScheduleTime = rule.Time.ToString("HH:mm");
+        MonthlyWeek = rule.MonthlyWeek;
     }
 
     public async Task<IActionResult> OnPostSaveDiscordAsync()
@@ -193,6 +207,45 @@ public class SetupModel : PageModel
                 case "autoadvance":
                     await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
                     return new JsonResult(new { ok = true, message = "Auto-advance saved." });
+                case "schedule":
+                {
+                    var timeZoneId = TimeZoneId.Trim();
+                    TimeZoneInfo tz;
+                    try
+                    {
+                        tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+                    }
+                    catch (TimeZoneNotFoundException)
+                    {
+                        return new JsonResult(new { ok = false, message = "Time zone was not found." }) { StatusCode = 400 };
+                    }
+                    catch (InvalidTimeZoneException)
+                    {
+                        return new JsonResult(new { ok = false, message = "Time zone is invalid." }) { StatusCode = 400 };
+                    }
+
+                    if (!TimeOnly.TryParse(ScheduleTime, out var t))
+                    {
+                        return new JsonResult(new { ok = false, message = "Session time must be HH:mm." }) { StatusCode = 400 };
+                    }
+
+                    var frequency = Frequency == "Monthly" ? "Monthly" : "Weekly";
+                    var interval = Math.Clamp(Interval, 1, 52);
+                    var dow = (DayOfWeek)Math.Clamp(DayOfWeekValue, 0, 6);
+                    var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
+                    var anchor = DateOnly.FromDateTime(nowLocal);
+
+                    await _settings.SaveScheduleRuleAsync(
+                        timeZoneId: timeZoneId,
+                        frequency: frequency,
+                        interval: interval,
+                        dayOfWeek: dow,
+                        time: t,
+                        monthlyWeek: MonthlyWeek,
+                        anchorDate: anchor);
+
+                    return new JsonResult(new { ok = true, message = "Schedule saved." });
+                }
                 case "bang":
                     if (ResetPurposePromptHistory)
                     {

@@ -87,13 +87,8 @@ public class SetupModel : PageModel
         await _settings.SaveAnnouncementConfigAsync(chId, t.Hour, t.Minute);
         await _settings.SaveAutoAdvanceMinutesAfterStartAsync(AutoAdvanceMinutesAfterStart);
 
-        // Now send preview/test
-        var tzRule = await _settings.GetScheduleRuleAsync();
-        var tz = TimeZoneInfo.FindSystemTimeZoneById(tzRule.TimeZoneId);
-        var nowLocal = TimeZoneInfo.ConvertTime(DateTime.UtcNow, tz);
-        var today = DateOnly.FromDateTime(nowLocal);
-
-        var (ok, msg) = await _announcementSender.SendMorningAsync(today, dryRun: true);
+        // Send the real next session details without marking it as announced.
+        var (ok, msg) = await _announcementSender.SendNextSessionDetailsAsync();
 
         Message = msg;
         MessageKind = ok ? "success" : "warning";

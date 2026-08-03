@@ -101,6 +101,23 @@ public sealed class AnnouncementSender
             : $"Sent {sent} morning announcement(s).");
     }
 
+    public async Task<(bool Ok, string Message)> SendNextSessionDetailsAsync(CancellationToken ct = default)
+    {
+        var (channel, error) = await ResolveAnnouncementChannelAsync();
+        if (channel == null)
+            return (false, error!);
+
+        var nowLocal = await _schedule.LocalNowAsync();
+        var session = await _schedule.GetNextSessionAsync(nowLocal);
+        if (session == null)
+            return (false, "No upcoming session was found.");
+
+        var message = await BuildMessageForSessionAsync(session, ct, nextSessionDetails: true);
+        await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
+
+        return (true, "Sent next session details.");
+    }
+
     public async Task<(bool Ok, string Message)> SendBirthdayAsync(ulong userId, string displayName, DateOnly localDate, bool dryRun = false, CancellationToken ct = default)
     {
         var (channel, error) = await ResolveAnnouncementChannelAsync();
@@ -152,7 +169,10 @@ public sealed class AnnouncementSender
         return (channel, null);
     }
 
-    private async Task<string> BuildMessageForSessionAsync(SessionInfo s, CancellationToken ct)
+    private async Task<string> BuildMessageForSessionAsync(
+        SessionInfo s,
+        CancellationToken ct,
+        bool nextSessionDetails = false)
     {
         // CANCELLED
         if (s.IsCancelled)
@@ -162,10 +182,14 @@ public sealed class AnnouncementSender
                 : $"\n**Reason:** {s.Note.Trim()}";
 
             // Extra blank line before reason for readability
-            return
-                $"🛑 **Gloomhaven is cancelled today**\n" +
-                $"⏰ *Was scheduled for* **{s.EffectiveStartLocal:h:mm tt}**\n" +
-                $"{noteLine}";
+            var cancelledHeading = nextSessionDetails
+                ? "🛑 **The next Gloomhaven session is cancelled**\n"
+                : "🛑 **Gloomhaven is cancelled today**\n";
+            var cancelledTime = nextSessionDetails
+                ? $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n"
+                : $"⏰ *Was scheduled for* **{s.EffectiveStartLocal:h:mm tt}**\n";
+
+            return cancelledHeading + cancelledTime + noteLine;
         }
 
         // ACTIVE
@@ -188,8 +212,12 @@ public sealed class AnnouncementSender
             : $"\n\n📝 **Note:** {s.Note.Trim()}";
 
         // Add blank line between header + assignments for readability
+        var heading = nextSessionDetails
+            ? "🎲 **Next Gloomhaven session**\n"
+            : "☀️ **Gloomhaven tonight!**\n";
+
         return
-            $"☀️ **Gloomhaven tonight!**\n" +
+            heading +
             $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n" +
             $"\n" +
             $"**Assignments**\n" +

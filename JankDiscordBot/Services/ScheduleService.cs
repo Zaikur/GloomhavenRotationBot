@@ -69,6 +69,21 @@ public sealed class ScheduleService
         return list;
     }
 
+    public async Task<SessionInfo?> GetNextSessionAsync(DateTime nowLocal)
+    {
+        var start = DateOnly.FromDateTime(nowLocal);
+
+        for (var i = 0; i < 366; i++)
+        {
+            var sessions = await GetSessionsOccurringOnDateAsync(start.AddDays(i));
+            var next = sessions.FirstOrDefault(session => session.EffectiveStartLocal >= nowLocal);
+            if (next != null)
+                return next;
+        }
+
+        return null;
+    }
+
     private static bool IsOriginalOccurrenceDate(DateOnly d, AppSettingsService.ScheduleRule rule)
     {
         return rule.Frequency switch

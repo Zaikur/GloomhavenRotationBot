@@ -72,6 +72,7 @@ public sealed class ChatbotService
         // Patterns indicating a question about upcoming session
         var patterns = new[]
         {
+            @"^\s*(?:(?:\d+|glom)\s+)?(?:session|schedule)\s*$",
             @"\b(are|is)\s+(we|it|there|this)\s+(doing|happening|on|still)",
             @"\b(do|does)\s+(we|it)\s+(have|meet)",
             @"\bsession\s+(tonight|today|this\s+week)",
@@ -98,19 +99,12 @@ public sealed class ChatbotService
     public async Task<string?> GetNextSessionResponseAsync()
     {
         var nowLocal = await _schedule.LocalNowAsync();
-        var upcoming = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+        var upcoming = await _schedule.GetNextSessionAsync(nowLocal);
 
         if (upcoming == null)
             return "I couldn't find any upcoming sessions scheduled. Try checking your own calendar for once!";
 
-        var dayDiff = DateOnly.FromDateTime(upcoming.EffectiveStartLocal).DayNumber - DateOnly.FromDateTime(nowLocal).DayNumber;
-        var timePhrase = dayDiff switch
-        {
-            0 => "**tonight**",
-            1 => "**tomorrow**",
-            _ when dayDiff < 7 => $"**this {upcoming.EffectiveStartLocal:dddd}**",
-            _ => $"on **{upcoming.EffectiveStartLocal:dddd, MMM d}**"
-        };
+        var timePhrase = $"on **{upcoming.EffectiveStartLocal:dddd, MMM d}**";
 
         if (upcoming.IsCancelled)
         {
@@ -147,29 +141,6 @@ public sealed class ChatbotService
             $"✅ Yes! Gloomhaven is on {timePhrase} at **{upcoming.EffectiveStartLocal:h:mm tt}**{moved}\n" +
             $"🧙 **DM:** {dmText}\n" +
             $"🍕 **Food:** {cookText}{note}";
-    }
-
-    private async Task<SessionInfo?> GetNextSessionAsync(DateOnly start)
-    {
-        for (int i = 0; i < 366; i++)
-        {
-            var day = start.AddDays(i);
-            var sessions = await _schedule.GetSessionsOccurringOnDateAsync(day);
-
-            foreach (var s in sessions)
-            {
-                // Skip sessions that already passed today
-                if (i == 0)
-                {
-                    var nowLocal = await _schedule.LocalNowAsync();
-                    if (s.EffectiveStartLocal < nowLocal) continue;
-                }
-
-                return s;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -384,7 +355,7 @@ public sealed class ChatbotService
     public async Task<string?> GetDMResponseAsync()
     {
         var nowLocal = await _schedule.LocalNowAsync();
-        var upcoming = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+        var upcoming = await _schedule.GetNextSessionAsync(nowLocal);
 
         if (upcoming == null)
             return "I couldn't find any upcoming sessions scheduled.";
@@ -410,7 +381,7 @@ public sealed class ChatbotService
     public async Task<string?> CheckIfUserIsDMAsync(ulong userId)
     {
         var nowLocal = await _schedule.LocalNowAsync();
-        var upcoming = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+        var upcoming = await _schedule.GetNextSessionAsync(nowLocal);
 
         if (upcoming == null)
             return "I couldn't find any upcoming sessions scheduled.";
@@ -438,7 +409,7 @@ public sealed class ChatbotService
     public async Task<string?> GetFoodResponseAsync()
     {
         var nowLocal = await _schedule.LocalNowAsync();
-        var upcoming = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+        var upcoming = await _schedule.GetNextSessionAsync(nowLocal);
 
         if (upcoming == null)
             return "I couldn't find any upcoming sessions scheduled.";
@@ -464,7 +435,7 @@ public sealed class ChatbotService
     public async Task<string?> CheckIfUserIsMakingFoodAsync(ulong userId)
     {
         var nowLocal = await _schedule.LocalNowAsync();
-        var upcoming = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+        var upcoming = await _schedule.GetNextSessionAsync(nowLocal);
 
         if (upcoming == null)
             return "I couldn't find any upcoming sessions scheduled.";
@@ -492,7 +463,7 @@ public sealed class ChatbotService
     public async Task<string?> GetCancellationStatusResponseAsync()
     {
         var nowLocal = await _schedule.LocalNowAsync();
-        var upcoming = await GetNextSessionAsync(DateOnly.FromDateTime(nowLocal));
+        var upcoming = await _schedule.GetNextSessionAsync(nowLocal);
 
         if (upcoming == null)
             return "I couldn't find any upcoming sessions scheduled.";

@@ -44,7 +44,7 @@ public sealed class BangResponseService
     private static readonly string[] BirthdayRollCritFailResponses =
     {
         "GLOM is so sorry, {0}. The dice said no birthday, and GLOM must listen to the dice. 🎲",
-        "GLOM wanted this to be your bonus birthday, {0}. GLOM truly did. But the dice have said no. 🎂",
+        "GLOM wanted this to be your  birthday, {0}. GLOM truly did. But the dice have said no. 🎂",
         "GLOM has so many sorries to give you, {0}. Unfortunately, none of them can turn this roll into a birthday. 🎲",
         "Please forgive GLOM, {0}. GLOM checked the roll twice, but your emergency birthday application was denied. 🎂",
         "GLOM brings terrible news, {0}. Today is not your bonus birthday. GLOM is giving you all of his apologies. 🎲"

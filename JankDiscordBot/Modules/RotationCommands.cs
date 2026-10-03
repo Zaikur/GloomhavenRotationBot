@@ -1,15 +1,27 @@
 ﻿using Discord.Interactions;
 using GloomhavenRotationBot.Data;
+using GloomhavenRotationBot.Services;
 
 namespace GloomhavenRotationBot.Discord.Modules;
 
 public sealed class RotationCommands : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly BotRepository _repo;
+    private readonly AnnouncementSender _announcements;
 
-    public RotationCommands(BotRepository repo)
+    public RotationCommands(BotRepository repo, AnnouncementSender announcements)
     {
         _repo = repo;
+        _announcements = announcements;
+    }
+
+    [SlashCommand("session", "Show details for the next Gloomhaven session")]
+    public async Task SessionAsync()
+    {
+        await DeferAsync(ephemeral: true);
+
+        var (_, message) = await _announcements.BuildNextSessionTextAsync();
+        await FollowupAsync(message, ephemeral: true);
     }
 
     [SlashCommand("who", "Who is up next? (DM or Food)")]

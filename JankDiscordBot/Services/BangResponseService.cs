@@ -43,11 +43,11 @@ public sealed class BangResponseService
 
     private static readonly string[] BirthdayRollCritFailResponses =
     {
-        "LIAR!!!! I'm putting {0} in timeout! 🚫🎂",
-        "OH NO YOU DIDN'T! Timeout for {0}! Nobody talk to them, they're in timeout! 🚫",
-        "CAUGHT RED-HANDED! {0} is now in timeout! Don't encourage them! 🚫⏰",
-        "THAT'S IT! {0} is in timeout! You've crossed the line! 🚫😤",
-        "ABSOLUTELY NOT! {0} gets timeout! Don't test me! 🚫🎂"
+        "GLOM is so sorry, {0}. The dice said no birthday, and GLOM must listen to the dice. 🎲",
+        "GLOM wanted this to be your bonus birthday, {0}. GLOM truly did. But the dice have said no. 🎂",
+        "GLOM has so many sorries to give you, {0}. Unfortunately, none of them can turn this roll into a birthday. 🎲",
+        "Please forgive GLOM, {0}. GLOM checked the roll twice, but your emergency birthday application was denied. 🎂",
+        "GLOM brings terrible news, {0}. Today is not your bonus birthday. GLOM is giving you all of his apologies. 🎲"
     };
 
     private static readonly string[] BirthdayRollNeutralResponses =
@@ -119,22 +119,11 @@ public sealed class BangResponseService
 
     private static readonly string[] BotInsultResponses =
     {
-        "You're not really my type.",
-        "If this is flirting, your technique needs work.",
-        "That would've hurt more if it had any craftsmanship.",
-        "Strong words from somebody arguing with a rotation bot.",
-        "You came in loud, but not especially effective."
-    };
-
-    private static readonly string[] TimeoutInsultResponses =
-    {
-        "Oh, so now you want to insult me, {0}? That's just adding fuel to the fire, buddy.",
-        "Wow, real mature, {0}. Your timeout just got more interesting.",
-        "Bold strategy, {0}. Let's see how that works out for you.",
-        "Nice language, {0}. That's definitely helping your case.",
-        "Classy move, {0}. Really classy.",
-        "I appreciate the passion, {0}, but the timeout appreciates it more.",
-        "No, fuck you {0}."
+        "GLOM has so many sorries to give, and GLOM is giving you all of them.",
+        "GLOM hears that you are upset. GLOM is very sorry, and GLOM will try to do better.",
+        "GLOM did not mean to make you angry. Please accept this apology and all the extra apologies GLOM brought with him.",
+        "Your feelings are large, and GLOM's pile of sorries is even larger. They are all yours.",
+        "GLOM understands. Something went wrong, and GLOM is sorry from the top of his head to the bottom of his little feet."
     };
 
     private static readonly Regex PurposeAnswerPattern = new(
@@ -261,8 +250,17 @@ public sealed class BangResponseService
         }
 
         var targetPattern = BuildBotTargetPattern(botUserId, botUsername);
+        var beforeTargetPattern =
+            @"(?:fuc?k(?:\s+you|\s+off)?|screw(?:\s+you)?|shut\s+up|bad\s+bot|(?:i\s+)?hate(?:\s+you)?|" +
+            @"you\s+suck|you(?:'re|\s+are)\s+(?:stupid|dumb|useless|annoying|awful|terrible|the\s+worst)|" +
+            @"(?:i(?:'m|\s+am)\s+)?(?:angry|mad|upset|disappointed)\s+(?:at|with|in))";
+        var afterTargetPattern =
+            @"(?:fuc?k(?:\s+you|\s+off)?|screw(?:\s+you)?|shut\s+up|(?:i\s+)?hate(?:\s+you)?|" +
+            @"you\s+suck|sucks?|bad\s+bot|is\s+(?:stupid|dumb|useless|annoying|awful|terrible|the\s+worst)|" +
+            @"you(?:'re|\s+are)\s+(?:stupid|dumb|useless|annoying|awful|terrible|the\s+worst)|" +
+            @"made\s+me\s+(?:angry|mad|upset|disappointed))";
         var insultPattern =
-            $@"(?:\b(?:fuck\s+you|fuck\s+off|screw\s+you)\b[\s\p{{P}}]*(?:{targetPattern})|(?:{targetPattern})[\s\p{{P}}]*\b(?:fuck\s+you|fuck\s+off|screw\s+you)\b)";
+            $@"(?:\b{beforeTargetPattern}\b[\s\p{{P}}]*(?:{targetPattern})|(?:{targetPattern})[\s\p{{P}}]*\b{afterTargetPattern}\b)";
 
         return Regex.IsMatch(content, insultPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
@@ -270,26 +268,6 @@ public sealed class BangResponseService
     public string GetBotInsultResponse()
     {
         return Pick(BotInsultResponses);
-    }
-
-    public bool LooksLikeTimeoutInsult(string content, ulong botUserId, string botUsername)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            return false;
-        }
-
-        var targetPattern = BuildBotTargetPattern(botUserId, botUsername);
-        // Match variations of fuck/fuk/fuc (with optional middle 'c') plus the bot name
-        var insultPattern =
-            $@"(?:\b[f]u[c]?k\b[\s\p{{P}}]*(?:{targetPattern})|(?:{targetPattern})[\s\p{{P}}]*\b[f]u[c]?k\b)";
-
-        return Regex.IsMatch(content, insultPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    }
-
-    public string GetTimeoutInsultResponse(string username)
-    {
-        return string.Format(Pick(TimeoutInsultResponses), username);
     }
 
     public string GetPurposeCrisisResponse()

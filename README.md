@@ -43,6 +43,7 @@ Slash commands respond ephemerally so channels do not get spammed.
 
 - `/who dm`
 - `/who food`
+- `/session`
 - `/advance dm`
 - `/advance food`
 - `/advance all`
@@ -82,7 +83,7 @@ Generic bang behavior:
 - after a successful bang response, the bot may ask a one-off `What's my purpose?` follow-up
 - if the same user answers that prompt in the same channel within 10 minutes, the bot replies with an existential crisis message
 - the purpose prompt is only meant to happen once per user unless you reset that history in Setup
-- directly insulting the bot can also get a response
+- directly insulting the bot or expressing frustration with it gets an apologetic response
 
 ### Birthdays
 

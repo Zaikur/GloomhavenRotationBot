@@ -107,15 +107,24 @@ public sealed class AnnouncementSender
         if (channel == null)
             return (false, error!);
 
+        var (ok, message) = await BuildNextSessionTextAsync(ct);
+        if (!ok)
+            return (false, message);
+
+        await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
+
+        return (true, "Sent next session details.");
+    }
+
+    public async Task<(bool Ok, string Message)> BuildNextSessionTextAsync(CancellationToken ct = default)
+    {
         var nowLocal = await _schedule.LocalNowAsync();
         var session = await _schedule.GetNextSessionAsync(nowLocal);
         if (session == null)
             return (false, "No upcoming session was found.");
 
         var message = await BuildMessageForSessionAsync(session, ct, nextSessionDetails: true);
-        await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
-
-        return (true, "Sent next session details.");
+        return (true, message);
     }
 
     public async Task<(bool Ok, string Message)> SendBirthdayAsync(ulong userId, string displayName, DateOnly localDate, bool dryRun = false, CancellationToken ct = default)

@@ -126,6 +126,15 @@ public sealed class BangResponseService
         "GLOM understands. Something went wrong, and GLOM is sorry from the top of his head to the bottom of his little feet."
     };
 
+    private static readonly string[] TimeoutInsultResponses =
+    {
+        "GLOM is sorry, {0}. GLOM hopes you can forgive him.",
+        "GLOM hears your anger, {0}, and GLOM is giving you every sorry he has.",
+        "GLOM did not want to upset you, {0}. GLOM is very, very sorry.",
+        "Your feelings matter, {0}. GLOM has gathered a whole armful of apologies for you.",
+        "GLOM understands, {0}. Please accept one big sorry and several smaller backup sorries."
+    };
+
     private static readonly Regex PurposeAnswerPattern = new(
         @"(?:^\s*|[.!?][\""'”’)\]]*\s+)(you\b|you're\b|you are\b|to\b|your purpose is\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -268,6 +277,21 @@ public sealed class BangResponseService
     public string GetBotInsultResponse()
     {
         return Pick(BotInsultResponses);
+    }
+
+    public bool LooksLikeTimeoutInsult(string content, ulong botUserId, string botUsername)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        return LooksLikeBotInsult(content, botUserId, botUsername);
+    }
+
+    public string GetTimeoutInsultResponse(string username)
+    {
+        return string.Format(Pick(TimeoutInsultResponses), username);
     }
 
     public string GetPurposeCrisisResponse()

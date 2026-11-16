@@ -43,7 +43,7 @@ builder.Services.AddSingleton<ScheduleService>();
 builder.Services.AddSingleton<AnnouncementSender>();
 builder.Services.AddSingleton<BangResponseService>();
 builder.Services.AddSingleton<ChatbotService>();
-builder.Services.AddHostedService<MorningAnnouncementService>();
+builder.Services.AddHostedService<AnnouncementService>();
 builder.Services.AddHostedService<AutoAdvanceService>();
 builder.Services.AddHostedService<BotRuntimeService>();
 builder.Services.AddHostedService<BirthdayService>();

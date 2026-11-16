@@ -81,18 +81,62 @@
             </div>
 
             <div class="col-12 col-md-6">
+                <label class="form-label" asp-for="AnnouncementMode">Send on</label>
+                <select class="form-select" asp-for="AnnouncementMode" data-autosave="true">
+                    <option value="EventDay">Event day</option>
+                    <option value="Weekday">Selected weekday</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6" id="announcement-weekday">
+                <label class="form-label" asp-for="AnnouncementWeekday">Announcement weekday</label>
+                <select class="form-select" asp-for="AnnouncementWeekday" data-autosave="true">
+                    @foreach (var day in new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday })
+                    {
+                        <option value="@day">@day</option>
+                    }
+                </select>
+            </div>
+            <div class="col-12 text-white-50 small">
+                Times use @Model.ScheduleTimeZone. Selected weekday means the event's Monday-Sunday calendar week.
+                Events that have started, and send times at or after the event start, are skipped. Weeks without events are skipped.
+                A missed announcement is sent while its event is still upcoming.
+            </div>
+            <div class="col-12 col-md-6">
                 <label class="form-label">Announcement time</label>
                 <input class="form-control" type="time" name="AnnounceTime" value="@Model.AnnounceTime" data-autosave="true" />
             </div>
 
+            <div class="col-12 small" id="announcement-preview">@Model.AnnouncementPreview</div>
+            <div class="col-12" data-save-status role="status"></div>
             <div class="col-12 d-flex flex-wrap gap-2">
                 <button class="btn btn-outline-info" type="submit" asp-page-handler="TestAnnouncement">
                     Test announcement
                 </button>
             </div>
             <div class="form-text text-white-50">
-                Sends the next session details to the configured announcement channel.
+                Saves announcement timing and sends the next session using saved calendar settings, without marking it as announced.
             </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mt-3">
+    <div class="card-body">
+        <h5 class="mb-1">Calendar event</h5>
+        <p class="text-white-50 small">Autosaves when changed. Announcements can include an event card and .ics attachment.
+            Importing adds one session; later moves and cancellations do not sync automatically. Your calendar app may use its own reminder preferences.</p>
+        <form method="post" asp-antiforgery="false" class="row g-3" data-autosave-form="true">
+            <input type="hidden" name="scope" value="calendar" />
+            <div class="col-12"><label><input asp-for="CalendarEnabled" data-autosave="true" /> Include calendar attachment and event card</label></div>
+            <div class="col-12 col-md-6"><label class="form-label" asp-for="EventTitle">Event title</label><input class="form-control" asp-for="EventTitle" maxlength="200" required data-autosave="true" /></div>
+            <div class="col-12 col-md-6"><label class="form-label" asp-for="EventDuration">Duration (minutes)</label><input class="form-control" asp-for="EventDuration" type="number" min="1" max="10080" required data-autosave="true" /></div>
+            <div class="col-12 col-md-6"><label class="form-label" asp-for="EventLocation">Location name</label><input class="form-control" asp-for="EventLocation" maxlength="200" data-autosave="true" /></div>
+            <div class="col-12 col-md-6"><label class="form-label" asp-for="EventAddress">Address</label><input class="form-control" asp-for="EventAddress" maxlength="500" data-autosave="true" /></div>
+            <div class="col-12"><label class="form-label" asp-for="EventDescription">Description</label><textarea class="form-control" asp-for="EventDescription" maxlength="2000" rows="3" data-autosave="true"></textarea></div>
+            <div class="col-12 col-md-6"><label class="form-label" asp-for="EventReminder">Remind before start (minutes)</label><input class="form-control" asp-for="EventReminder" type="number" min="0" max="40320" data-autosave="true" /><div class="form-text text-white-50">Leave blank for no reminder; 0 means at start.</div></div>
+            <div class="col-12"><label><input asp-for="EventIncludeNote" data-autosave="true" /> Include session note</label></div>
+            <div class="col-12"><label><input asp-for="EventIncludeAssignments" data-autosave="true" /> Include expected DM and food assignments</label></div>
+            <div class="col-12" data-save-status role="status"></div>
         </form>
     </div>
 </div>
@@ -138,24 +182,34 @@
 <script>
 (() => {
     const timers = new WeakMap();
+    const pending = new WeakMap();
     const autosaveForms = document.querySelectorAll("form[data-autosave-form='true']");
 
     async function autosave(form) {
+        const status = form.querySelector("[data-save-status]");
+        if (!form.reportValidity()) return;
+        if (status) status.textContent = "Saving...";
         try {
-            const body = new FormData(form);
             const response = await fetch(`${window.location.pathname}?handler=Autosave`, {
-                method: "POST",
-                body
+                method: "POST", body: new FormData(form)
             });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.warn("Autosave failed:", errorText);
+            const result = await response.json();
+            if (status) {
+                status.textContent = result.message || "Save failed.";
+                status.classList.toggle("text-danger", !response.ok);
             }
+            if (result.preview) document.getElementById("announcement-preview").textContent = result.preview;
         } catch (err) {
-            console.warn("Autosave request failed:", err);
+            if (status) status.textContent = "Could not save. Please try again.";
         }
     }
+
+    const mode = document.getElementById("AnnouncementMode");
+    function updateWeekday() {
+        document.getElementById("announcement-weekday").hidden = mode.value !== "Weekday";
+    }
+    mode.addEventListener("change", updateWeekday);
+    updateWeekday();
 
     function scheduleAutosave(form) {
         const existing = timers.get(form);
@@ -164,7 +218,7 @@
         }
 
         const next = setTimeout(() => {
-            autosave(form);
+            pending.set(form, (pending.get(form) || Promise.resolve()).then(() => autosave(form)));
             timers.delete(form);
         }, 250);
 

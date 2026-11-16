@@ -14,7 +14,7 @@ A self-hosted Discord bot + local Web UI for managing a Gloomhaven group:
 - Tracks **who’s up next** for **DM** and **Food**
 - Lets you **skip/swap** turns without removing someone from the rotation
 - Maintains a **session calendar** (month view) with per-occurrence **cancel/move/note**
-- Sends a **morning announcement** to a configured channel
+- Sends an **event announcement** on the event day or a selected weekday
 - Can **auto-advance** rotations after a session time passes if the session wasn't cancelled.
 - Includes a **Broadcast** UI page to send custom Discord-formatted messages as the bot
 - **Chatbot** responds to questions like "are we doing this tonight?" with next session details
@@ -32,7 +32,7 @@ Everything is stored in a local SQLite database on a mounted volume.
 - Lets you reorder rosters and set the current DM/Food member from the web UI
 - Supports a weekly or monthly recurring session rule with timezone, interval, weekday, time, and monthly-week settings
 - Maintains a session calendar with per-occurrence cancel, move, and note overrides
-- Sends a morning announcement to a configured Discord channel on session days
+- Sends a scheduled announcement on the event day or a selected weekday in the same calendar week
 - Auto-advances DM and Food after the session start time plus a configurable grace period
 - Stores birthdays and sends birthday announcements automatically once per year
 - Exposes a status page and a simple `/health` endpoint
@@ -103,7 +103,7 @@ Generic bang behavior:
 The LAN-only admin UI includes:
 
 - Status: Discord runtime state and connection details
-- Setup: guild ID, bot token, announcement channel/time, auto-advance delay, token test, morning announcement test, and bang prompt reset
+- Setup: guild ID, bot token, announcement channel/timing, calendar event settings, auto-advance delay, token test, announcement test, and bang prompt reset
 - Rosters: DM/Food ordering, current member selection, and birthday storage
 - Schedule: timezone-aware weekly/monthly recurrence configuration
 - Calendar: month view with cancel, move, and note overrides for individual occurrences
@@ -249,7 +249,7 @@ In the default container layout, the database lives under `/app/data/app.db`.
 - Set a real announcement channel ID in Setup.
 - Make sure the bot can send messages to that channel.
 - Birthday posts use the same announcement channel as morning session announcements.
-- Use Test morning announcement from Setup to validate the channel.
+- Use Test announcement from Setup to validate the channel and calendar attachment.
 
 ### Web UI is not reachable in Docker
 
@@ -258,3 +258,42 @@ In the default container layout, the database lives under `/app/data/app.db`.
 - Confirm you are connecting from localhost or a private LAN IP
 - Confirm host firewall rules
 
+
+## Announcement timing and calendar events
+
+In **Setup ? Announcements**, choose **Event day** or **Selected weekday**, then set the send time.
+All times use the timezone configured on the Schedule page. Selected weekday means the event's
+Monday-Sunday calendar week, including events moved through Calendar. Weeks without events are skipped.
+A send time at or after the event start is skipped; choose an earlier weekday/time to announce that event.
+The next eligible announcement is previewed under the timing controls.
+
+The scheduler checks every 30 seconds and reloads saved settings. After downtime it catches up only
+while the event is still upcoming. Existing occurrence delivery markers prevent normal duplicate sends,
+including after changing timing. A failure between Discord accepting a message and saving its delivery
+marker can still cause a duplicate on retry. Cancelled sessions get cancellation text without calendar files.
+Birthday announcement timing remains unchanged and uses the same configured channel.
+
+In **Setup ? Calendar event**, enable the event card and `.ics` attachment and configure the title,
+location name, address, duration, description, and reminder minutes (blank disables; zero means at start).
+Optionally include the session note and expected DM/food assignments. Assignments reflect current
+rosters and projected intervening automatic advances; subsequent manual roster changes can change them.
+Save these settings before using **Test announcement**, which sends the next session with the saved
+calendar settings without consuming its normal announcement marker.
+
+Members open/import the attached `.ics` file in their calendar. The start comes from the actual session
+(including moved dates), and the end is start plus duration. Files contain UTC timestamps and a stable
+occurrence ID. This adds one session and does not subscribe to later moves/cancellations; calendar apps
+may apply their own reminder or duplicate-import behavior. The bot requires **Attach Files** and
+**Embed Links** channel permissions when calendar attachments are enabled. No public admin URL is needed.
+
+For daylight saving transitions, nonexistent local times shift to the first valid minute and ambiguous
+local times use the first occurrence of that clock time.
+
+Run the dependency-free regression checks with:
+
+```bash
+dotnet run --project Tests/Tests.csproj
+```
+
+After a Debug build, run `python Tests/smoke_setup.py` for the Setup HTTP smoke checks.
+This starts a local instance on port 15061 with a temporary database and no Discord credentials.

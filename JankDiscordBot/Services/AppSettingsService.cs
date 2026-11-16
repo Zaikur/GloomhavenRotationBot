@@ -4,6 +4,24 @@ namespace GloomhavenRotationBot.Services;
 
 public sealed class AppSettingsService
 {
+    public sealed record AnnouncementOptions(string Mode = "EventDay", DayOfWeek Weekday = DayOfWeek.Monday);
+    public sealed record CalendarOptions(bool Enabled = false, string Title = "Gloomhaven game night",
+        string Location = "", string Address = "", int DurationMinutes = 240, string Description = "",
+        int? ReminderMinutes = 30, bool IncludeNote = true, bool IncludeAssignments = true);
+
+    public async Task<AnnouncementOptions> GetAnnouncementOptionsAsync()
+        => System.Text.Json.JsonSerializer.Deserialize<AnnouncementOptions>(
+            await _repo.GetSettingAsync("Announcements.Options") ?? "{}") ?? new();
+
+    public Task SaveAnnouncementOptionsAsync(AnnouncementOptions options)
+        => _repo.UpsertSettingAsync("Announcements.Options", System.Text.Json.JsonSerializer.Serialize(options));
+
+    public async Task<CalendarOptions> GetCalendarOptionsAsync()
+        => System.Text.Json.JsonSerializer.Deserialize<CalendarOptions>(
+            await _repo.GetSettingAsync("Calendar.Options") ?? "{}") ?? new();
+
+    public Task SaveCalendarOptionsAsync(CalendarOptions options)
+        => _repo.UpsertSettingAsync("Calendar.Options", System.Text.Json.JsonSerializer.Serialize(options));
     private readonly BotRepository _repo;
     private readonly ILogger<AppSettingsService> _log;
 

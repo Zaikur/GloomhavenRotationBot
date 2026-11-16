@@ -44,6 +44,7 @@ public sealed class AnnouncementSender
     {
         var sessions = await _schedule.GetSessionsOccurringOnDateAsync(localDate);
 
+        if (sessions.Count == 0) return (false, "No session occurs on that date.");
         var s = sessions[0];
         var msg = await BuildMessageForSessionAsync(s, ct);
 
@@ -79,21 +80,9 @@ public sealed class AnnouncementSender
 
         foreach (var s in sessions)
         {
-            // In normal mode, only announce once per occurrence
-            if (!dryRun)
-            {
-                var markers = await _repo.GetMarkersAsync(s.OccurrenceId);
-                if (markers?.AnnouncedMorning == true)
-                    continue;
-            }
-
-                var message = await BuildMessageForSessionAsync(s, ct);
-
-            await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
-
+            var (ok, result) = await SendSessionAsync(s, dryRun, ct);
+            if (!ok) return (false, result);
             sent++;
-            if (!dryRun)
-                await _repo.SetAnnouncedAsync(s.OccurrenceId, DateTime.UtcNow);
         }
 
         return (true, dryRun
@@ -107,13 +96,61 @@ public sealed class AnnouncementSender
         if (channel == null)
             return (false, error!);
 
-        var (ok, message) = await BuildNextSessionTextAsync(ct);
-        if (!ok)
-            return (false, message);
+        var session = await _schedule.GetNextSessionAsync(await _schedule.LocalNowAsync());
+        if (session == null) return (false, "No upcoming session was found.");
+        return await SendSessionAsync(session, true, ct);
+    }
 
-        await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
+    public async Task<(bool Ok, string Message)> SendSessionAsync(SessionInfo session, bool test, CancellationToken ct = default)
+    {
+        var (channel, error) = await ResolveAnnouncementChannelAsync();
+        if (channel == null) return (false, error!);
+        if (!test && (await _repo.GetMarkersAsync(session.OccurrenceId))?.AnnouncedMorning == true)
+            return (true, "Already announced.");
+        var message = await BuildMessageForSessionAsync(session, ct, true);
+        var calendar = await _settings.GetCalendarOptionsAsync();
+        if (calendar.Enabled && !session.IsCancelled)
+        {
+            var zone = await _schedule.GetTimeZoneAsync();
+            var (dmId, foodId) = await GetAssignmentsAsync(session);
+            string Name(ulong? id) => id is null ? "Not assigned" :
+                _client.Guilds.Select(g => g.GetUser(id.Value)).FirstOrDefault(u => u != null)?.DisplayName ?? id.Value.ToString();
+            var bytes = CalendarEventBuilder.Build(session, calendar, zone,
+                $"DM: {Name(dmId)}; Food: {Name(foodId)}", DateTime.UtcNow);
+            using var stream = new MemoryStream(bytes);
+            var location = string.Join(", ", new[] { calendar.Location, calendar.Address }.Where(v => !string.IsNullOrWhiteSpace(v)));
+            var embed = new EmbedBuilder().WithTitle(calendar.Title).WithColor(Color.Green)
+                .WithDescription($"{session.EffectiveStartLocal:dddd, MMM d, yyyy 'at' h:mm tt} ({zone.Id})\nDuration: {calendar.DurationMinutes} minutes\n{location}")
+                .WithFooter("Open the attached .ics file to add this session to your calendar. Later changes do not sync automatically.")
+                .Build();
+            await channel.SendFileAsync(stream, $"gloomhaven-{session.OriginalDateLocal:yyyy-MM-dd}.ics", message,
+                embed: embed, options: new RequestOptions { CancelToken = ct });
+        }
+        else
+            await channel.SendMessageAsync(message, options: new RequestOptions { CancelToken = ct });
+        if (!test) await _repo.SetAnnouncedAsync(session.OccurrenceId, DateTime.UtcNow);
+        return (true, test ? "Test announcement sent with current calendar settings (not marked as announced)." : "Session announced.");
+    }
 
-        return (true, "Sent next session details.");
+    private async Task<(ulong? Dm, ulong? Food)> GetAssignmentsAsync(SessionInfo session)
+    {
+        var dm = await _repo.GetRotationAsync(RotationRole.DM);
+        var food = await _repo.GetRotationAsync(RotationRole.Food);
+        var now = await _schedule.LocalNowAsync();
+        var grace = await _settings.GetAutoAdvanceMinutesAfterStartAsync();
+        var first = DateOnly.FromDateTime(now).AddDays(-1);
+        var last = DateOnly.FromDateTime(session.EffectiveStartLocal);
+        // Include pending auto-advances, matching AutoAdvanceService's two-day window.
+        for (var date = first; date <= last; date = date.AddDays(1))
+        foreach (var prior in (await _schedule.GetSessionsOccurringOnDateAsync(date)).DistinctBy(s => s.OccurrenceId))
+        {
+            if (prior.OccurrenceId == session.OccurrenceId || prior.IsCancelled || prior.EffectiveStartLocal >= session.EffectiveStartLocal) continue;
+            if (prior.EffectiveStartLocal.AddMinutes(grace) > session.EffectiveStartLocal) continue;
+            if ((await _repo.GetMarkersAsync(prior.OccurrenceId))?.Advanced == true) continue;
+            dm.TryAdvanceToNextAvailable();
+            food.TryAdvanceToNextAvailable();
+        }
+        return (dm.GetCurrentAvailableMember(), food.GetCurrentAvailableMember());
     }
 
     public async Task<(bool Ok, string Message)> BuildNextSessionTextAsync(CancellationToken ct = default)
@@ -191,43 +228,24 @@ public sealed class AnnouncementSender
                 : $"\n**Reason:** {s.Note.Trim()}";
 
             // Extra blank line before reason for readability
-            var cancelledHeading = nextSessionDetails
-                ? "🛑 **The next Gloomhaven session is cancelled**\n"
-                : "🛑 **Gloomhaven is cancelled today**\n";
-            var cancelledTime = nextSessionDetails
-                ? $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n"
-                : $"⏰ *Was scheduled for* **{s.EffectiveStartLocal:h:mm tt}**\n";
-
-            return cancelledHeading + cancelledTime + noteLine;
+            return "**Gloomhaven session cancelled**\n" +
+                $"**{s.EffectiveStartLocal:dddd, MMM d, yyyy}** at **{s.EffectiveStartLocal:h:mm tt}**\n" + noteLine;
         }
 
-        // ACTIVE
-        var dm = await _repo.GetRotationAsync(RotationRole.DM);
-        var cook = await _repo.GetRotationAsync(RotationRole.Food);
-
-        var dmId = dm.GetCurrentAvailableMember();
-        var cookId = cook.GetCurrentAvailableMember();
-
-        string dmText = dm.Members.Count == 0
-            ? "_(not set)_"
-            : dmId is null ? "_(all absent)_" : $"<@{dmId.Value}>";
-
-        string cookText = cook.Members.Count == 0
-            ? "_(not set)_"
-            : cookId is null ? "_(all absent)_" : $"<@{cookId.Value}>";
+        var (dmId, cookId) = await GetAssignmentsAsync(s);
+        string dmText = dmId is null ? "_(not assigned)_" : $"<@{dmId.Value}>";
+        string cookText = cookId is null ? "_(not assigned)_" : $"<@{cookId.Value}>";
 
         var noteBlock = string.IsNullOrWhiteSpace(s.Note)
             ? ""
             : $"\n\n📝 **Note:** {s.Note.Trim()}";
 
         // Add blank line between header + assignments for readability
-        var heading = nextSessionDetails
-            ? "🎲 **Next Gloomhaven session**\n"
-            : "☀️ **Gloomhaven tonight!**\n";
+        var heading = "**Gloomhaven session**\n";
 
         return
             heading +
-            $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d}** at **{s.EffectiveStartLocal:h:mm tt}**\n" +
+            $"🗓️ **{s.EffectiveStartLocal:dddd, MMM d, yyyy}** at **{s.EffectiveStartLocal:h:mm tt}**\n" +
             $"\n" +
             $"**Assignments**\n" +
             $"• 🧙 **DM:** {dmText}\n" +
